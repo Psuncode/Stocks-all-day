@@ -94,6 +94,13 @@ export const ALLOWED_SIGNALS_BY_TYPE: Record<ThesisType, ReadonlySet<RuleSignal>
   ]),
 };
 
+// js-yaml parses unquoted YYYY-MM-DD as Date; quoted as string. Accept both,
+// normalize to ISO date string (YYYY-MM-DD).
+const IsoDate = z
+  .union([z.string(), z.date()])
+  .transform((v) => (v instanceof Date ? v.toISOString().slice(0, 10) : v))
+  .refine((s) => !Number.isNaN(Date.parse(s)), "must be an ISO date");
+
 export const Thesis = z.object({
   summary: z.string().min(1),
   thesis_type: ThesisType,
@@ -102,15 +109,15 @@ export const Thesis = z.object({
   entry_target: z.number().positive(),
   exit_target: z.number().positive(),
   invalidation_price: z.number().positive(),
-  time_horizon: z
-    .string()
-    .refine((s) => !Number.isNaN(Date.parse(s)), "must be an ISO date"),
+  time_horizon: IsoDate,
   catalysts: z.array(z.string()).default([]),
 });
 export type Thesis = z.infer<typeof Thesis>;
 
 export const HistoryEntry = z.object({
-  date: z.string(),
+  date: z.union([z.string(), z.date()]).transform((v) =>
+    v instanceof Date ? v.toISOString().slice(0, 10) : v,
+  ),
   result: z.string(),
   setup_tag: SetupTag.optional(),
   spy_trend_on_exit: z.enum(["up", "down", "chop"]).optional(),
@@ -136,7 +143,10 @@ export const TickerEntry = z
     history: z.array(HistoryEntry).default([]),
     obsidian_link: z.string().optional(),
     notes: z.string().optional(),
-    dropped_at: z.string().optional(),
+    dropped_at: z
+      .union([z.string(), z.date()])
+      .transform((v) => (v instanceof Date ? v.toISOString().slice(0, 10) : v))
+      .optional(),
     dropped_reason: z.string().optional(),
   })
   .superRefine((entry, ctx) => {
