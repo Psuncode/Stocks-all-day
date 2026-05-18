@@ -6,6 +6,67 @@ import { GeminiExplain } from "@/app/symbol/[ticker]/gemini-explain";
 import { getProvider } from "@/lib/data/provider";
 import { evaluateSymbol, todayYmd } from "@/lib/engine/evaluate";
 import { fetchSpyCandles } from "@/lib/data/yahoo";
+import { loadWatchlist } from "@/lib/thesis/load";
+import { horizonState } from "@/lib/thesis/horizon";
+import type { HorizonState } from "@/lib/thesis/horizon";
+import { suggestedShares } from "@/lib/thesis/sizing";
+import type { TickerEntry } from "@/lib/thesis/schema";
+
+const usd = new Intl.NumberFormat("en-US", {
+  style: "currency",
+  currency: "USD",
+  minimumFractionDigits: 2,
+  maximumFractionDigits: 2,
+});
+const intFmt = new Intl.NumberFormat("en-US");
+
+function horizonTone(state: HorizonState): "neutral" | "watch" | "block" {
+  if (state === "expired") return "block";
+  if (state === "approaching") return "watch";
+  return "neutral";
+}
+
+function daysUntil(iso: string): number {
+  const horizon = new Date(iso);
+  const today = new Date();
+  const horizonDay = Date.UTC(
+    horizon.getUTCFullYear(),
+    horizon.getUTCMonth(),
+    horizon.getUTCDate(),
+  );
+  const todayDay = Date.UTC(
+    today.getUTCFullYear(),
+    today.getUTCMonth(),
+    today.getUTCDate(),
+  );
+  return Math.round((horizonDay - todayDay) / (24 * 60 * 60 * 1000));
+}
+
+function ConfidenceDots({ value }: { value: number }) {
+  const filled = Math.max(0, Math.min(5, value));
+  return (
+    <span className="tabular-nums" aria-label={`Confidence ${filled} of 5`}>
+      <span className="text-emerald-700">{"●".repeat(filled)}</span>
+      <span className="text-zinc-300">{"○".repeat(5 - filled)}</span>
+      <span className="ml-2 text-zinc-500">({filled}/5)</span>
+    </span>
+  );
+}
+
+function ThesisRow({
+  label,
+  children,
+}: {
+  label: string;
+  children: React.ReactNode;
+}) {
+  return (
+    <div className="flex items-start justify-between gap-3 border-b border-dashed border-zinc-200 py-2 text-sm">
+      <span className="shrink-0 text-zinc-500">{label}</span>
+      <span className="text-right font-medium text-zinc-900">{children}</span>
+    </div>
+  );
+}
 
 function decisionTone(d: string) {
   if (d === "TRADE") return "trade" as const;
@@ -49,10 +110,11 @@ export default async function SymbolPage({
   const allowEarnings = sp.allowEarnings === "1" || sp.allowEarnings === "true";
 
   const provider = getProvider();
-  const [universe, spy, symbol] = await Promise.all([
+  const [universe, spy, symbol, watchlistResult] = await Promise.all([
     provider.getUniverse(),
     fetchSpyCandles(),
     provider.getSymbol(ticker),
+    loadWatchlist(),
   ]);
 
   if (!symbol) {
@@ -72,6 +134,34 @@ export default async function SymbolPage({
   }
 
   const result = evaluateSymbol(symbol, universe, { allowEarningsTrades: allowEarnings }, todayYmd(), spy);
+
+  // Watchlist enrichment (T4): match by ticker (uppercase compare) so we can
+  // render the thesis panel below the trade plan.
+  const watchEntry: TickerEntry | undefined = watchlistResult.watchlist.tickers.find(
+    (t) => t.ticker.toUpperCase() === ticker.toUpperCase(),
+  );
+  const riskPct = watchlistResult.watchlist.risk_pct;
+  const accountEquity = Number(process.env.ACCOUNT_EQUITY_USD ?? 33000);
+
+  const thesis = watchEntry?.thesis;
+  const thesisHorizon: HorizonState | undefined = thesis
+    ? horizonState(thesis.time_horizon)
+    : undefined;
+  const thesisDays = thesis ? daysUntil(thesis.time_horizon) : 0;
+  const thesisShares = thesis
+    ? suggestedShares({
+        entry: thesis.entry_target,
+        invalidationPrice: thesis.invalidation_price,
+        equity: accountEquity,
+        riskPct,
+      })
+    : 0;
+  const tagMismatch = Boolean(
+    thesis?.setup_tag &&
+      result.gateSummary.setup !== "NONE" &&
+      thesis.setup_tag.toUpperCase() !== result.gateSummary.setup,
+  );
+
   const chartCandles = symbol.candles.slice(-120).map((c) => ({ t: c.t, c: c.c }));
   const history = symbol.candles.slice(-252);
   const closes = history.map((c) => c.c);
@@ -168,6 +258,121 @@ export default async function SymbolPage({
               )}
             </div>
           </div>
+
+          {thesis ? (
+            <div className="rounded-[28px] border border-white/70 bg-white/80 p-6 shadow-sm">
+              <div className="flex items-center justify-between gap-3">
+                <div className="text-xs uppercase tracking-[0.24em] text-zinc-500">Thesis</div>
+                <Badge tone="info">Watchlist · {watchEntry?.status ?? "active"}</Badge>
+              </div>
+
+              <p className="mt-4 text-sm leading-relaxed text-zinc-700">{thesis.summary}</p>
+
+              <div className="mt-4 space-y-2">
+                <ThesisRow label="Setup tag">
+                  <span className="inline-flex flex-wrap items-center justify-end gap-2">
+                    <span>{thesis.setup_tag ?? "—"}</span>
+                    {tagMismatch ? (
+                      <>
+                        <Badge tone="watch">
+                          Engine sees: {result.gateSummary.setup}
+                        </Badge>
+                        <span className="text-xs font-normal italic text-zinc-500">
+                          Disagreement is signal.
+                        </span>
+                      </>
+                    ) : null}
+                  </span>
+                </ThesisRow>
+
+                {typeof thesis.confidence === "number" ? (
+                  <ThesisRow label="Confidence">
+                    <ConfidenceDots value={thesis.confidence} />
+                  </ThesisRow>
+                ) : null}
+
+                <ThesisRow label="Targets">
+                  <span className="tabular-nums">
+                    Entry {usd.format(thesis.entry_target)} → Exit{" "}
+                    {usd.format(thesis.exit_target)}
+                  </span>
+                </ThesisRow>
+
+                <div className="border-b border-dashed border-zinc-200 py-2 text-sm">
+                  <div className="text-zinc-500">Risk</div>
+                  <div className="mt-2 grid gap-2 sm:grid-cols-2">
+                    <div className="rounded-2xl border border-zinc-200 bg-white/60 p-3">
+                      <div className="font-medium tabular-nums text-zinc-900">
+                        Stop{" "}
+                        {result.plan?.stop != null
+                          ? usd.format(result.plan.stop)
+                          : "—"}
+                      </div>
+                      <div className="mt-1 text-xs text-zinc-500">
+                        engine — where I cut risk
+                      </div>
+                    </div>
+                    <div className="rounded-2xl border border-zinc-200 bg-white/60 p-3">
+                      <div className="font-medium tabular-nums text-zinc-900">
+                        Invalidation {usd.format(thesis.invalidation_price)}
+                      </div>
+                      <div className="mt-1 text-xs text-zinc-500">
+                        you — where I was wrong
+                      </div>
+                    </div>
+                  </div>
+                </div>
+
+                <ThesisRow label="Suggested shares">
+                  <span className="tabular-nums">
+                    {intFmt.format(thesisShares)} shares ·{" "}
+                    {riskPct.toLocaleString("en-US", {
+                      maximumFractionDigits: 2,
+                    })}
+                    % risk · {usd.format(accountEquity).replace(/\.00$/, "")} acct
+                  </span>
+                </ThesisRow>
+
+                <ThesisRow label="Horizon">
+                  {thesisHorizon ? (
+                    <Badge tone={horizonTone(thesisHorizon)}>
+                      Horizon {thesis.time_horizon} (
+                      {thesisDays >= 0
+                        ? `${thesisDays} days`
+                        : `${Math.abs(thesisDays)} days ago`}
+                      )
+                    </Badge>
+                  ) : (
+                    "—"
+                  )}
+                </ThesisRow>
+
+                {thesis.catalysts.length > 0 ? (
+                  <div className="py-2 text-sm">
+                    <div className="text-zinc-500">Catalysts</div>
+                    <ul className="mt-2 list-disc space-y-1 pl-5 text-zinc-800">
+                      {thesis.catalysts.map((c) => (
+                        <li key={c}>{c}</li>
+                      ))}
+                    </ul>
+                  </div>
+                ) : null}
+              </div>
+            </div>
+          ) : watchEntry ? (
+            <div className="rounded-[28px] border border-white/70 bg-white/80 p-6 shadow-sm">
+              <div className="text-xs uppercase tracking-[0.24em] text-zinc-500">Thesis</div>
+              <div className="mt-3 flex items-center gap-2 text-sm">
+                <Badge tone="soft">Watchlist · {watchEntry.status}</Badge>
+              </div>
+              <p className="mt-4 text-sm leading-relaxed text-zinc-600">
+                Watchlist status:{" "}
+                <span className="font-medium text-zinc-800">{watchEntry.status}</span>
+                . Add a thesis in <code className="rounded bg-zinc-100 px-1 py-0.5 text-xs">data/watchlist.yaml</code>{" "}
+                to see this panel populated.
+              </p>
+            </div>
+          ) : null}
 
           <div className="rounded-[28px] border border-white/70 bg-white/80 p-6 shadow-sm">
             <div className="text-xs uppercase tracking-[0.24em] text-zinc-500">Fundamentals</div>
