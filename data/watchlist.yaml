@@ -1,0 +1,59 @@
+version: 1
+risk_pct: 0.5
+
+tickers:
+  - ticker: ANGX
+    name: Angel Studios
+    status: active
+    sector_tag: media
+    thesis:
+      summary: "$2.67 → $5 by end of August (Q2 earnings + summer film slate catalysts)"
+      thesis_type: catalyst
+      setup_tag: oversold_bounce
+      confidence: 3
+      entry_target: 2.67
+      exit_target: 5.00
+      invalidation_price: 2.30
+      time_horizon: 2026-08-31
+      catalysts:
+        - "Q2 2026 earnings"
+        - "Summer film slate launches"
+    invalidation_rules:
+      - id: equity_offering
+        description: "Another equity offering announcement = thesis killed"
+        signal: news_match
+        pattern: "(equity offering|secondary offering|share issuance)"
+    sizing:
+      position_pct: 5
+      notes: "Scenario D — wait until late July (2 weeks pre-earnings) to enter"
+    history:
+      - date: 2025-Q4
+        result: "won $2.50 → $3.10 round trip"
+        setup_tag: pullback
+    obsidian_link: "[[2026-05-18 ANGX vs PTRN — Trade Setup Analysis]]"
+    notes: |
+      Previously won $2.50 → $3.10 round trip. Wait until late July
+      (2 weeks pre-earnings) to enter. Trade-what-you-know holds.
+
+  - ticker: PACS
+    status: research_pending
+    sector_tag: healthcare
+    notes: "Healthcare adjacency, research pending."
+
+  - ticker: SMR
+    name: NuScale Power
+    status: research_pending
+    sector_tag: energy
+    notes: "Nuclear momentum trade — research pending."
+
+  - ticker: OWLT
+    name: Owlet
+    status: dropped
+    dropped_at: 2026-05-18
+    dropped_reason: "Tariff + retail destocking + guidance cut compounding. Timeline too uncertain. Bull case real but needs 6–12 mo leash, not short-term."
+
+  - ticker: PTRN
+    name: Pattern Group
+    status: shelved
+    dropped_at: 2026-05-18
+    dropped_reason: "Fundamentals strong but momentum chase + insider selling overhang + untested setup. Trade what you know — not Philip's edge."
