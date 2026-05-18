@@ -23,17 +23,6 @@ tickers:
         description: "Another equity offering announcement = thesis killed"
         signal: news_match
         pattern: "(equity offering|secondary offering|share issuance)"
-    sizing:
-      position_pct: 5
-      notes: "Scenario D — wait until late July (2 weeks pre-earnings) to enter"
-    history:
-      - date: 2025-Q4
-        result: "won $2.50 → $3.10 round trip"
-        setup_tag: pullback
-    obsidian_link: "[[2026-05-18 ANGX vs PTRN — Trade Setup Analysis]]"
-    notes: |
-      Previously won $2.50 → $3.10 round trip. Wait until late July
-      (2 weeks pre-earnings) to enter. Trade-what-you-know holds.
 
   - ticker: PACS
     status: research_pending
@@ -56,4 +45,4 @@ tickers:
     name: Pattern Group
     status: shelved
     dropped_at: 2026-05-18
-    dropped_reason: "Fundamentals strong but momentum chase + insider selling overhang + untested setup. Trade what you know — not Philip's edge."
+    dropped_reason: "Fundamentals strong but momentum chase + insider selling overhang + untested setup. Outside my edge."
