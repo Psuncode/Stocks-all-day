@@ -1,9 +1,17 @@
 /**
  * Slack delivery — invalidations (Feature C) + daily digest (Feature D).
  *
- * ONE webhook POST per cron run (requirements.md §C.2.2). Combined message:
- * invalidations first (if any), then "📊 Today's 5" section with per-pick
- * Block Kit sections + quickchart.io image blocks. No retry on failure.
+ * One webhook POST per cron run with fires (if any) and digest picks (if any).
+ *
+ * Charts: each pick gets a quickchart.io "shortlink" — we POST the chart config
+ * to /chart/create and receive a short URL like https://quickchart.io/chart/render/sf-...
+ * Inline-encoding 90 daily closes pushed the image_url over Slack's ~3KB limit
+ * and the entire webhook payload was rejected silently. Shortlinks fix it.
+ *
+ * Failure modes:
+ *  - SLACK_WEBHOOK_URL unset: log + skip (dev).
+ *  - Chart shortlink POST fails: skip the image, keep the text section.
+ *  - Webhook POST fails: log + swallow. No retries.
  */
 
 import type { DigestPick } from "@/lib/digest/build";
@@ -39,53 +47,65 @@ type SlackBlock =
 
 type SlackPayload = { blocks: SlackBlock[] };
 
+const CHART_POINTS = 30;
+const CHART_WIDTH = 600;
+const CHART_HEIGHT = 220;
+
 // ---------------------------------------------------------------------------
-// Block builders
+// Invalidation blocks (Feature C — visual hierarchy tightened)
 // ---------------------------------------------------------------------------
 
 function fireBlocks(fires: FireRecord[], appUrl: string): SlackBlock[] {
   if (fires.length === 0) return [];
   const plural = fires.length > 1 ? "s" : "";
-  const nowEpoch = Math.floor(Date.now() / 1000);
 
   const blocks: SlackBlock[] = [
     {
       type: "header",
       text: {
         type: "plain_text",
-        text: `🔥 ${fires.length} invalidation${plural} fired`,
+        text: `🔥 ${fires.length} thesis invalidation${plural}`,
         emoji: true,
       },
     },
-    {
-      type: "context",
-      elements: [
-        {
-          type: "mrkdwn",
-          text: `<!date^${nowEpoch}^{date_pretty} · {time}|now>`,
-        },
-      ],
-    },
-    { type: "divider" },
   ];
 
   for (const fire of fires) {
-    const tickerLink = `*<${appUrl}/symbol/${fire.ticker}|${fire.ticker}>*`;
+    const link = `*<${appUrl}/symbol/${fire.ticker}|${fire.ticker}>*`;
     const label = fire.description ?? fire.rule_id;
-    const text =
-      `${tickerLink}` +
-      `\n${label}` +
-      `\nObserved: \`${fire.observed}\` · Threshold: \`${fire.threshold}\``;
     blocks.push({
       type: "section",
-      text: { type: "mrkdwn", text },
+      text: {
+        type: "mrkdwn",
+        text:
+          `${link}  ·  _${label}_\n` +
+          `Observed \`${fire.observed}\` vs threshold \`${fire.threshold}\``,
+      },
     });
   }
 
   return blocks;
 }
 
-function pickBlocks(picks: DigestPick[], appUrl: string): SlackBlock[] {
+// ---------------------------------------------------------------------------
+// Digest blocks (Feature D — better visual hierarchy)
+// ---------------------------------------------------------------------------
+
+function setupLabel(setup: string): string {
+  if (setup === "NONE") return "";
+  return setup.toLowerCase().replace("_", " ");
+}
+
+function decisionTag(decision: string): string {
+  if (decision === "TRADE") return "⭐ TRADE";
+  if (decision === "WATCH") return "👀 WATCH";
+  return decision;
+}
+
+async function pickBlocks(
+  picks: DigestPick[],
+  appUrl: string,
+): Promise<SlackBlock[]> {
   if (picks.length === 0) return [];
   const nowEpoch = Math.floor(Date.now() / 1000);
 
@@ -103,40 +123,51 @@ function pickBlocks(picks: DigestPick[], appUrl: string): SlackBlock[] {
       elements: [
         {
           type: "mrkdwn",
-          text: `<!date^${nowEpoch}^{date_pretty}|today> · engine-ranked candidates`,
+          text: `<!date^${nowEpoch}^{date_pretty}|today> · engine-ranked candidates · not investment advice`,
         },
       ],
     },
   ];
 
-  for (const pick of picks) {
+  for (let i = 0; i < picks.length; i++) {
+    const pick = picks[i]!;
     const r = pick.result;
     const tickerLink = `*<${appUrl}/symbol/${r.ticker}|${r.ticker}>*`;
-    const decisionTag = r.decision === "TRADE" ? "⭐ TRADE" : "WATCH";
-    const setup = r.gateSummary.setup === "NONE"
-      ? ""
-      : ` · ${r.gateSummary.setup.toLowerCase().replace("_", " ")}`;
+    const price = `\`$${r.metrics.price.toFixed(2)}\``;
+    const setup = setupLabel(r.gateSummary.setup);
+    const setupTag = setup ? `  ·  *${setup}*` : "";
+    const sector = r.sector ? `  ·  ${r.sector}` : "";
+
+    const headerLine = `${tickerLink}  ${price}  ·  ${decisionTag(r.decision)}${setupTag}${sector}`;
+    const reasonLine = `> ${r.reason}`;
     const planLine = r.plan
-      ? `\n_Entry $${r.plan.entry} · Stop $${r.plan.stop} · Target $${r.plan.target} · R:R ${r.plan.rr}x_`
-      : "";
-    const sectorBit = r.sector ? ` · ${r.sector}` : "";
-    const text =
-      `${tickerLink} · ${decisionTag}${setup}${sectorBit}` +
-      `\n${r.reason}` +
-      planLine;
+      ? `\nEntry \`$${r.plan.entry}\` → Stop \`$${r.plan.stop}\` → Target \`$${r.plan.target}\`  ·  *R:R ${r.plan.rr}x*  ·  est ${r.plan.estHold}`
+      : `\n_No actionable plan — watching for setup confirmation._`;
+
+    const gates =
+      `\n_Trend ${r.gateSummary.trend.toLowerCase()} · ` +
+      `vol ${r.gateSummary.vol.toLowerCase()} (ATR ${r.metrics.atrPct.toFixed(1)}%) · ` +
+      `liquidity ${r.gateSummary.liquidity.toLowerCase()} (ADV$ ${(r.metrics.advUsd / 1_000_000).toFixed(0)}M)_`;
 
     blocks.push({
       type: "section",
-      text: { type: "mrkdwn", text },
+      text: {
+        type: "mrkdwn",
+        text: headerLine + "\n" + reasonLine + planLine + gates,
+      },
     });
 
-    const chart = chartUrl(r.ticker, pick.candles, r.plan);
+    const chart = await chartShortUrl(r.ticker, pick.candles, r.plan);
     if (chart) {
       blocks.push({
         type: "image",
         image_url: chart,
-        alt_text: `${r.ticker} 90-day price`,
+        alt_text: `${r.ticker} ${CHART_POINTS}-session chart`,
       });
+    }
+
+    if (i < picks.length - 1) {
+      blocks.push({ type: "divider" });
     }
   }
 
@@ -144,89 +175,115 @@ function pickBlocks(picks: DigestPick[], appUrl: string): SlackBlock[] {
 }
 
 // ---------------------------------------------------------------------------
-// quickchart.io URL builder
+// quickchart.io shortlink builder (POST → small URL)
 // ---------------------------------------------------------------------------
 
-function chartUrl(
+type PlanOverlay = { entry: number; stop: number; target: number };
+
+async function chartShortUrl(
   ticker: string,
   candles: Array<{ t: string; c: number }>,
-  plan?: { entry: number; stop: number; target: number },
-): string | null {
+  plan?: PlanOverlay,
+): Promise<string | null> {
   if (candles.length < 2) return null;
-  const labels = candles.map((c) => c.t.slice(5)); // MM-DD
-  const data = candles.map((c) => c.c);
-  const last = data[data.length - 1] ?? 0;
-  const first = data[0] ?? 0;
-  const lineColor = last >= first ? "#16a34a" : "#dc2626";
 
-  const annotations: Record<string, unknown> = {};
+  const recent = candles.slice(-CHART_POINTS);
+  const labels = recent.map((c) => c.t.slice(5));
+  const data = recent.map((c) => c.c);
+  const first = data[0] ?? 0;
+  const last = data[data.length - 1] ?? 0;
+  const positive = last >= first;
+  const lineColor = positive ? "rgb(22,163,74)" : "rgb(220,38,38)";
+
+  // Plan overlay rendered as additional flat datasets (avoids the
+  // annotation plugin which quickchart's default sandbox may not load).
+  const datasets: Array<Record<string, unknown>> = [
+    {
+      label: ticker,
+      data,
+      borderColor: lineColor,
+      backgroundColor: "transparent",
+      borderWidth: 2,
+      pointRadius: 0,
+      tension: 0.1,
+    },
+  ];
+
   if (plan) {
-    annotations.entry = horizontalLine(plan.entry, "#2563eb", "Entry");
-    annotations.stop = horizontalLine(plan.stop, "#dc2626", "Stop");
-    annotations.target = horizontalLine(plan.target, "#16a34a", "Target");
+    const flat = (value: number, color: string, label: string) => ({
+      label,
+      data: data.map(() => value),
+      borderColor: color,
+      backgroundColor: "transparent",
+      borderWidth: 1,
+      borderDash: [5, 3],
+      pointRadius: 0,
+    });
+    datasets.push(flat(plan.entry, "rgb(37,99,235)", "Entry"));
+    datasets.push(flat(plan.stop, "rgb(220,38,38)", "Stop"));
+    datasets.push(flat(plan.target, "rgb(22,163,74)", "Target"));
   }
 
-  const config = {
+  const chart = {
     type: "line",
-    data: {
-      labels,
-      datasets: [
-        {
-          label: ticker,
-          data,
-          borderColor: lineColor,
-          backgroundColor: "transparent",
-          borderWidth: 2,
-          pointRadius: 0,
-          tension: 0.1,
-        },
-      ],
-    },
+    data: { labels, datasets },
     options: {
       plugins: {
-        legend: { display: false },
-        title: { display: true, text: `${ticker} · last ${candles.length} sessions` },
-        annotation: plan ? { annotations } : undefined,
+        legend: {
+          display: !!plan,
+          position: "bottom",
+          labels: { font: { size: 9 } },
+        },
+        title: {
+          display: true,
+          text: `${ticker} · last ${recent.length} sessions`,
+          font: { size: 11 },
+        },
       },
       scales: {
-        x: { ticks: { maxTicksLimit: 8, font: { size: 9 } } },
+        x: { ticks: { maxTicksLimit: 6, font: { size: 9 } } },
         y: { ticks: { font: { size: 9 } } },
       },
     },
   };
 
-  const encoded = encodeURIComponent(JSON.stringify(config));
-  return `https://quickchart.io/chart?c=${encoded}&w=600&h=240&backgroundColor=white`;
-}
-
-function horizontalLine(value: number, color: string, label: string) {
-  return {
-    type: "line",
-    yMin: value,
-    yMax: value,
-    borderColor: color,
-    borderWidth: 1,
-    borderDash: [6, 3],
-    label: {
-      enabled: true,
-      content: `${label} ${value}`,
-      position: "end",
-      font: { size: 9 },
-      backgroundColor: color,
-      color: "#fff",
-    },
-  };
+  try {
+    const res = await fetch("https://quickchart.io/chart/create", {
+      method: "POST",
+      headers: { "content-type": "application/json" },
+      body: JSON.stringify({
+        chart,
+        width: CHART_WIDTH,
+        height: CHART_HEIGHT,
+        backgroundColor: "white",
+        version: "4",
+      }),
+    });
+    if (!res.ok) {
+      console.warn(
+        `[slack] quickchart shortlink failed for ${ticker}: ${res.status}`,
+      );
+      return null;
+    }
+    const json = (await res.json()) as { success?: boolean; url?: string };
+    if (!json.success || !json.url) return null;
+    return json.url;
+  } catch (e) {
+    console.warn(
+      `[slack] quickchart shortlink threw for ${ticker}: ${(e as Error).message}`,
+    );
+    return null;
+  }
 }
 
 // ---------------------------------------------------------------------------
-// Public sender — one POST, fires + picks combined
+// Public sender
 // ---------------------------------------------------------------------------
 
 export async function sendSlackDigest(
   fires: FireRecord[],
   picks: DigestPick[] = [],
 ): Promise<void> {
-  // Skip entirely if there's nothing to say.
   if (fires.length === 0 && picks.length === 0) return;
 
   const webhook = process.env.SLACK_WEBHOOK_URL;
@@ -247,10 +304,10 @@ export async function sendSlackDigest(
     blocks.push({ type: "divider" });
   }
 
-  blocks.push(...pickBlocks(picks, appUrl));
+  // Build digest blocks in parallel (chart shortlinks fan out to quickchart).
+  const digestBlocks = await pickBlocks(picks, appUrl);
+  blocks.push(...digestBlocks);
 
-  // Slack has a 50-block limit per message. With up to 5 picks × 2 blocks each
-  // = 10 + intro headers ≈ 14 blocks. Plus fires (up to ~5 typically). Safe.
   const payload: SlackPayload = { blocks: blocks.slice(0, 50) };
 
   try {
@@ -262,7 +319,7 @@ export async function sendSlackDigest(
     if (!res.ok) {
       const body = await res.text().catch(() => "<no body>");
       console.error(
-        `[slack] webhook POST failed: status=${res.status} body=${body}`,
+        `[slack] webhook POST failed: status=${res.status} body=${body} payload_size=${JSON.stringify(payload).length}`,
       );
     }
   } catch (e) {
