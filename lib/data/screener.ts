@@ -1,0 +1,135 @@
+import YahooFinance from "yahoo-finance2";
+
+const yf = new YahooFinance({ suppressNotices: ["yahooSurvey"] });
+
+// ---------------------------------------------------------------------------
+// Types
+// ---------------------------------------------------------------------------
+
+export type ScreenerQuote = {
+  ticker: string;
+  name: string;
+  price: number;
+  bid: number;
+  ask: number;
+  avgVolume3m: number;
+  earningsTimestamp: number | null;
+};
+
+// ---------------------------------------------------------------------------
+// Screener IDs to combine for broad market coverage
+// ---------------------------------------------------------------------------
+
+const SCREENER_IDS = [
+  "most_actives",              // high volume
+  "day_gainers",               // momentum up
+  "day_losers",                // oversold bounce candidates
+  "most_shorted_stocks",       // short squeeze candidates
+  "aggressive_small_caps",     // small cap growth
+  "undervalued_growth_stocks", // value + growth
+] as const;
+
+/** Safety net if all screeners fail */
+const FALLBACK_TICKERS = [
+  "PLTR", "RBLX", "SOFI", "HOOD", "SNAP", "PINS", "AFRM", "NU",
+  "DKNG", "RIVN", "ROKU", "CLF", "AA", "X", "RIG", "DAL", "UAL",
+  "NCLH", "HIMS", "DUOL",
+];
+
+// ---------------------------------------------------------------------------
+// Fetch one predefined screener
+// ---------------------------------------------------------------------------
+
+// eslint-disable-next-line @typescript-eslint/no-explicit-any
+function mapQuote(raw: any): ScreenerQuote {
+  return {
+    ticker: raw.symbol ?? "",
+    name: raw.shortName ?? raw.longName ?? raw.symbol ?? "",
+    price: raw.regularMarketPrice ?? 0,
+    bid: raw.bid ?? 0,
+    ask: raw.ask ?? 0,
+    avgVolume3m: raw.averageDailyVolume3Month ?? 0,
+    earningsTimestamp: raw.earningsTimestamp
+      ? Math.floor(new Date(raw.earningsTimestamp).getTime() / 1000)
+      : null,
+  };
+}
+
+async function fetchOneScreener(id: string): Promise<ScreenerQuote[]> {
+  try {
+    // eslint-disable-next-line @typescript-eslint/no-explicit-any
+    const result: any = await (yf.screener as any)(id, { count: 250 }, { validateResult: false });
+    const quotes = result.quotes ?? [];
+    return quotes.map(mapQuote);
+  } catch (e) {
+    console.warn(`[screener] ${id} failed:`, e instanceof Error ? e.message : e);
+    return [];
+  }
+}
+
+// ---------------------------------------------------------------------------
+// Fetch all screeners, merge, deduplicate
+// ---------------------------------------------------------------------------
+
+export async function fetchScreenerUniverse(): Promise<ScreenerQuote[]> {
+  const results = await Promise.all(SCREENER_IDS.map(fetchOneScreener));
+  const all = results.flat();
+
+  // Deduplicate by ticker — keep first occurrence
+  const seen = new Map<string, ScreenerQuote>();
+  for (const q of all) {
+    if (q.ticker && !seen.has(q.ticker)) {
+      seen.set(q.ticker, q);
+    }
+  }
+
+  const universe = [...seen.values()];
+  console.log(
+    `[screener] Discovered ${universe.length} unique tickers from ${SCREENER_IDS.length} screeners`,
+  );
+  return universe;
+}
+
+// ---------------------------------------------------------------------------
+// Pre-filter: price range + ADV$ floor
+// ---------------------------------------------------------------------------
+
+export function preFilter(quotes: ScreenerQuote[]): ScreenerQuote[] {
+  const filtered = quotes.filter((q) => {
+    if (q.price < 5 || q.price > 100) return false;
+    const advUsd = q.avgVolume3m * q.price;
+    if (advUsd < 5_000_000) return false;
+    return true;
+  });
+  console.log(`[screener] Pre-filter: ${quotes.length} → ${filtered.length} candidates`);
+  return filtered;
+}
+
+// ---------------------------------------------------------------------------
+// Utah always-include tickers
+// ---------------------------------------------------------------------------
+
+export const UTAH_TICKERS = [
+  // Silicon Slopes / Utah tech
+  "DOMO",   // Domo Inc — American Fork
+  "HCAT",   // Health Catalyst — South Jordan
+  "RXRX",   // Recursion Pharmaceuticals — Salt Lake City
+  "WEAV",   // Weave Communications — Lehi
+  "PRPL",   // Purple Innovation — Lehi
+  "COOK",   // Traeger — Salt Lake City
+  "NATR",   // Nature's Sunshine — Lehi
+  // Utah financials / industrials
+  "ZION",   // Zions Bancorporation — Salt Lake City
+  "SKYW",   // SkyWest Inc — St. George
+  "NUS",    // Nu Skin Enterprises — Provo
+  // Additional Utah-based
+  "CLAR",   // Clarus Corp — Salt Lake City
+  "CODX",   // Co-Diagnostics — Salt Lake City
+  "CLNN",   // Clene Nanomedicine — Salt Lake City
+];
+
+// ---------------------------------------------------------------------------
+// Fallback tickers (exported for provider.ts)
+// ---------------------------------------------------------------------------
+
+export { FALLBACK_TICKERS };
