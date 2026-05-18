@@ -2,14 +2,25 @@ import { loadWatchlist, type LoadError } from "@/lib/thesis/load";
 import { evaluateRule } from "@/lib/thesis/evaluate-rules";
 import { getProvider } from "@/lib/data/provider";
 import { sendSlackDigest, type FireRecord } from "@/lib/thesis/slack";
+import { buildDigest, type DigestPick } from "@/lib/digest/build";
 
 export const runtime = "nodejs";
 export const dynamic = "force-dynamic";
+// Full-universe digest scan exceeds the 10s hobby default. 60s is the hobby cap.
+export const maxDuration = 60;
+
+type DigestSummary = {
+  ticker: string;
+  decision: string;
+  setup: string;
+  rr: number | null;
+};
 
 type CheckResponse = {
   checked: number;
   skipped: number;
   fires: FireRecord[];
+  digest: DigestSummary[];
   schema_errors: LoadError[];
   timestamp: string;
 };
@@ -82,21 +93,38 @@ export async function POST(req: Request): Promise<Response> {
     }
   }
 
-  // Deliver Slack digest (T6) — single POST with all fires. No-op when fires
-  // is empty (alert-only mode) or when SLACK_WEBHOOK_URL is unset. Errors are
-  // swallowed inside sendSlackDigest so a Slack outage does not fail the cron.
-  await sendSlackDigest(fires);
+  // Feature D — build the daily top-5 digest in parallel with no extra Yahoo
+  // round-trips beyond the standard scan path. Failures here must NOT block
+  // invalidation alerts (requirements.md §D.6).
+  let picks: DigestPick[] = [];
+  try {
+    picks = await buildDigest();
+  } catch (e) {
+    console.error(
+      `[check-invalidations] digest build failed: ${(e as Error).message}`,
+    );
+  }
+
+  // Single combined POST: fires (if any) + digest (if any). Skipped when both
+  // are empty or when SLACK_WEBHOOK_URL is unset. Errors swallowed inside.
+  await sendSlackDigest(fires, picks);
 
   const body: CheckResponse = {
     checked: active.length,
     skipped,
     fires,
+    digest: picks.map((p) => ({
+      ticker: p.result.ticker,
+      decision: p.result.decision,
+      setup: p.result.gateSummary.setup,
+      rr: p.result.plan?.rr ?? null,
+    })),
     schema_errors: errors,
     timestamp: new Date().toISOString(),
   };
 
   console.log(
-    `[check-invalidations] checked=${body.checked} skipped=${body.skipped} fires=${body.fires.length} schema_errors=${body.schema_errors.length}`,
+    `[check-invalidations] checked=${body.checked} skipped=${body.skipped} fires=${body.fires.length} digest=${body.digest.length} schema_errors=${body.schema_errors.length}`,
   );
 
   return Response.json(body);

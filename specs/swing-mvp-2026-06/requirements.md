@@ -256,6 +256,43 @@ Folded in from `research.md` after deep-research pass on 9 OSS comparables + 6 t
 - `dropped` history rows feeding a future post-mortem view
 - AND/OR group semantics for invalidation_rules (revisit post-Aug 17)
 
+## 10.5 v1.2 amendments — daily digest (2026-05-18, post-deploy)
+
+After the MVP shipped on 2026-05-18, the user requested a daily Slack digest of 5 engine-recommended candidates (with reasons + charts) combined with the existing invalidation alerts. Scope:
+
+### Feature D — Daily top-5 digest in Slack
+
+- **D.1** *(Ubiquitous)* When the daily cron (Feature C trigger) runs, the system shall ALSO build a digest of up to 5 candidate tickers from the full screener universe.
+- **D.2** *(Ubiquitous)* Candidate selection:
+  - Run `evaluateSymbol()` over every ticker in `getProvider().getUniverse()`
+  - Filter to `decision === "TRADE"` first; if fewer than 5 TRADE, fill with `decision === "WATCH"`
+  - Sort: TRADE before WATCH, then by `plan.rr` descending, then by `metrics.advUsd` descending
+  - Take top 5
+- **D.3** *(Ubiquitous)* Slack delivery — ONE combined message per cron run:
+  - If any invalidations fired: header "🔥 N invalidations fired" + per-fire sections (Feature C unchanged) + divider
+  - Then: header "📊 Today's 5" + per-pick sections, each containing:
+    - Bold ticker linked to `/symbol/[TICKER]`
+    - Decision tag (TRADE/WATCH) + setup_tag label
+    - Engine `reason` text
+    - Entry/Stop/Target/R:R if `plan` present
+    - Chart image (Feature D.5)
+- **D.4** *(Event-driven)* When digest computation produces zero candidates, the digest section is omitted (no "no picks today" placeholder).
+- **D.5** *(Ubiquitous)* Charts shall be rendered via `quickchart.io` URLs embedded in Slack `image` blocks. URL encodes a Chart.js config with the last 90 daily closes; entry/stop/target horizontal reference lines added when `plan` is present.
+- **D.6** *(Unwanted)* If digest computation throws or times out, the system shall still send the invalidation section (if any) and log the digest error. Digest failure never blocks invalidation alerts.
+- **D.7** *(Ubiquitous)* The cron route shall declare `export const maxDuration = 60` to use Vercel's hobby-tier max function duration (the full-universe scan exceeds the 10s default).
+
+### Non-functional
+
+- **N.5** Adds one external dependency on `quickchart.io` (third-party chart-image service). Public service, no API key. If unavailable, Slack message renders without inline charts (image blocks fail gracefully — link in section text still works).
+- **N.6** No new runtime npm dependencies. Chart URL construction is plain string-building.
+
+### Out of scope (post-Aug 17)
+
+- User-tunable digest size (5 hard-coded for v1.2)
+- Personalization filtering (e.g. "only show oversold_bounce setups") — captured as future enhancement
+- Server-rendered chart PNG to replace quickchart.io
+- Backtest of "did the digest's top 5 outperform"
+
 ## 11. Next steps
 
 1. User reviews v1.1 (this doc) and flags anything wrong.
