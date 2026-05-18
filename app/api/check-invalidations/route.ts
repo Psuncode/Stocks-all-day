@@ -1,18 +1,10 @@
 import { loadWatchlist, type LoadError } from "@/lib/thesis/load";
 import { evaluateRule } from "@/lib/thesis/evaluate-rules";
 import { getProvider } from "@/lib/data/provider";
+import { sendSlackDigest, type FireRecord } from "@/lib/thesis/slack";
 
 export const runtime = "nodejs";
 export const dynamic = "force-dynamic";
-
-type FireRecord = {
-  ticker: string;
-  rule_id: string;
-  rule_signal: string;
-  description?: string;
-  observed: number | string;
-  threshold: number | string;
-};
 
 type CheckResponse = {
   checked: number;
@@ -89,6 +81,11 @@ export async function POST(req: Request): Promise<Response> {
       }
     }
   }
+
+  // Deliver Slack digest (T6) — single POST with all fires. No-op when fires
+  // is empty (alert-only mode) or when SLACK_WEBHOOK_URL is unset. Errors are
+  // swallowed inside sendSlackDigest so a Slack outage does not fail the cron.
+  await sendSlackDigest(fires);
 
   const body: CheckResponse = {
     checked: active.length,
