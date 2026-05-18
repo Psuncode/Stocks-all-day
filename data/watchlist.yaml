@@ -8,7 +8,7 @@ tickers:
     sector_tag: media
     thesis:
       summary: "$2.67 → $5 by end of August (Q2 earnings + summer film slate catalysts)"
-      thesis_type: catalyst
+      thesis_type: mixed
       setup_tag: oversold_bounce
       confidence: 3
       entry_target: 2.67
@@ -23,6 +23,10 @@ tickers:
         description: "Another equity offering announcement = thesis killed"
         signal: news_match
         pattern: "(equity offering|secondary offering|share issuance)"
+      - id: deploy_verification
+        description: "Deploy verification — temporary rule, revert after Slack confirms"
+        signal: price_below
+        level: 2.69
 
   - ticker: PACS
     status: research_pending
