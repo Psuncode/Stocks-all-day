@@ -19,8 +19,12 @@ let cached: Redis | null | undefined;
 
 export function getKv(): Redis | null {
   if (cached !== undefined) return cached;
-  const url = process.env.UPSTASH_REDIS_REST_URL;
-  const token = process.env.UPSTASH_REDIS_REST_TOKEN;
+  // Vercel's Upstash KV integration injects KV_*-prefixed env vars; the
+  // Upstash console-direct path uses UPSTASH_* prefixes. Accept either.
+  const url =
+    process.env.UPSTASH_REDIS_REST_URL ?? process.env.KV_REST_API_URL;
+  const token =
+    process.env.UPSTASH_REDIS_REST_TOKEN ?? process.env.KV_REST_API_TOKEN;
   if (!url || !token) {
     cached = null;
     return null;
