@@ -56,7 +56,7 @@ function ConfidenceDots({ value }: { value: number }) {
   );
 }
 
-function ThesisRow({
+function Row({
   label,
   children,
 }: {
@@ -64,7 +64,7 @@ function ThesisRow({
   children: React.ReactNode;
 }) {
   return (
-    <div className="flex items-start justify-between gap-3 border-b border-dashed border-zinc-200 py-2 text-sm">
+    <div className="flex items-start justify-between gap-3 border-b border-dashed border-zinc-200 py-2 text-sm last:border-b-0">
       <span className="shrink-0 text-zinc-500">{label}</span>
       <span className="text-right font-medium text-zinc-900">{children}</span>
     </div>
@@ -80,25 +80,6 @@ function decisionTone(d: string) {
 function formatMillions(value: number) {
   if (!Number.isFinite(value)) return "—";
   return `${(value / 1_000_000).toFixed(1)}M`;
-}
-
-function StatCard({ label, value, hint }: { label: string; value: string; hint?: string }) {
-  return (
-    <div className="rounded-2xl border border-white/70 bg-white/80 p-4 shadow-sm">
-      <div className="text-[11px] uppercase tracking-[0.2em] text-zinc-500">{label}</div>
-      <div className="mt-2 text-lg font-semibold text-zinc-900">{value}</div>
-      {hint ? <div className="mt-1 text-xs text-zinc-500">{hint}</div> : null}
-    </div>
-  );
-}
-
-function InfoRow({ label, value }: { label: string; value: string }) {
-  return (
-    <div className="flex items-center justify-between gap-3 border-b border-dashed border-zinc-200 py-2 text-sm">
-      <span className="text-zinc-500">{label}</span>
-      <span className="font-medium text-zinc-900">{value}</span>
-    </div>
-  );
 }
 
 export default async function SymbolPage({
@@ -124,9 +105,14 @@ export default async function SymbolPage({
       <main className="mx-auto max-w-4xl px-4 py-10">
         <div className="rounded-2xl border bg-white p-6 shadow-sm">
           <div className="text-lg font-semibold">Not found</div>
-          <div className="mt-2 text-sm text-zinc-600">No symbol named &quot;{ticker}&quot;.</div>
+          <div className="mt-2 text-sm text-zinc-600">
+            No symbol named &quot;{ticker}&quot;.
+          </div>
           <div className="mt-4">
-            <Link className="text-sm font-medium text-emerald-800 hover:underline" href="/scanner">
+            <Link
+              className="text-sm font-medium text-emerald-800 hover:underline"
+              href="/scanner"
+            >
               Back to scanner
             </Link>
           </div>
@@ -135,13 +121,18 @@ export default async function SymbolPage({
     );
   }
 
-  const result = evaluateSymbol(symbol, universe, { allowEarningsTrades: allowEarnings }, todayYmd(), spy);
-
-  // Watchlist enrichment (T4): match by ticker (uppercase compare) so we can
-  // render the thesis panel below the trade plan.
-  const watchEntry: TickerEntry | undefined = watchlistResult.watchlist.tickers.find(
-    (t) => t.ticker.toUpperCase() === ticker.toUpperCase(),
+  const result = evaluateSymbol(
+    symbol,
+    universe,
+    { allowEarningsTrades: allowEarnings },
+    todayYmd(),
+    spy,
   );
+
+  const watchEntry: TickerEntry | undefined =
+    watchlistResult.watchlist.tickers.find(
+      (t) => t.ticker.toUpperCase() === ticker.toUpperCase(),
+    );
   const riskPct = watchlistResult.watchlist.risk_pct;
   const accountEquity = Number(process.env.ACCOUNT_EQUITY_USD ?? 33000);
 
@@ -164,7 +155,9 @@ export default async function SymbolPage({
       thesis.setup_tag.toUpperCase() !== result.gateSummary.setup,
   );
 
-  const chartCandles = symbol.candles.slice(-120).map((c) => ({ t: c.t, c: c.c }));
+  const chartCandles = symbol.candles
+    .slice(-120)
+    .map((c) => ({ t: c.t, c: c.c }));
   const history = symbol.candles.slice(-252);
   const closes = history.map((c) => c.c);
   const lastClose = closes[closes.length - 1] ?? result.metrics.price;
@@ -173,252 +166,309 @@ export default async function SymbolPage({
   const fromHigh = high52 ? ((lastClose - high52) / high52) * 100 : 0;
   const fromLow = low52 ? ((lastClose - low52) / low52) * 100 : 0;
 
+  // Today's move for the inline price line
+  const prevClose = closes[closes.length - 2] ?? lastClose;
+  const todayPct = ((lastClose - prevClose) / Math.max(0.01, prevClose)) * 100;
+  const todayUp = todayPct >= 0;
+
   return (
-    <main className="mx-auto max-w-7xl px-4 pb-16 pt-10">
-      <div className="flex flex-wrap items-start justify-between gap-6">
-        <div className="space-y-3">
-          <div className="text-xs uppercase tracking-[0.3em] text-emerald-800">Swing Workspace</div>
-          <h1 className="font-[family:var(--font-display)] text-3xl text-zinc-900">
-            {result.ticker} · {result.name}
-          </h1>
-          <div className="text-sm text-zinc-500">{result.sector}</div>
-          <div className="flex flex-wrap items-center gap-3 text-xs text-zinc-500">
-            <Badge tone="info">Live</Badge>
-            <span>
-              Last refresh{" "}
-              {new Date(result.updatedAt).toLocaleTimeString("en-US", {
-                hour: "numeric",
-                minute: "2-digit",
-              })}
+    <main className="mx-auto max-w-7xl px-4 pb-16 pt-8">
+      {/* Hero header — single line, ticker / price / decision */}
+      <div className="flex flex-wrap items-end justify-between gap-4">
+        <div className="min-w-0">
+          <div className="flex flex-wrap items-baseline gap-3">
+            <h1 className="font-[family:var(--font-display)] text-4xl text-zinc-900">
+              {result.ticker}
+            </h1>
+            <span className="text-lg text-zinc-500">{result.name}</span>
+          </div>
+          <div className="mt-1 flex flex-wrap items-baseline gap-3 text-sm text-zinc-600">
+            <span>{result.sector}</span>
+            <span className="tabular-nums">
+              {usd.format(result.metrics.price)}
             </span>
-            <span>Universe: {universe.length} names</span>
+            <span
+              className={`tabular-nums ${todayUp ? "text-emerald-700" : "text-red-700"}`}
+            >
+              {todayUp ? "▲" : "▼"} {Math.abs(todayPct).toFixed(2)}% today
+            </span>
           </div>
         </div>
-        <div className="rounded-[28px] border border-white/70 bg-white/80 p-5 text-right shadow-sm">
-          <div className="text-xs uppercase tracking-[0.24em] text-zinc-500">Decision</div>
-          <div className="mt-2 flex items-center justify-end gap-2">
+        <div className="flex items-center gap-3">
+          <Badge tone={decisionTone(result.decision)}>{result.decision}</Badge>
+          <span className="text-sm text-zinc-600">{result.reason}</span>
+        </div>
+      </div>
+
+      {/* Stat strip — compact */}
+      <div className="mt-6 grid grid-cols-2 gap-3 sm:grid-cols-4">
+        <Stat label="Spread" value={`${result.metrics.spreadPct.toFixed(3)}%`} />
+        <Stat label="ADV $" value={formatMillions(result.metrics.advUsd)} />
+        <Stat label="ATR" value={`${result.metrics.atrPct.toFixed(2)}%`} />
+        <Stat
+          label="52W range"
+          value={`${usd.format(low52)} – ${usd.format(high52)}`}
+          hint={`${fromLow >= 0 ? "+" : ""}${fromLow.toFixed(1)}% / ${fromHigh.toFixed(1)}%`}
+        />
+      </div>
+
+      {/* Hero chart — full width, no side aside */}
+      <section className="mt-6 rounded-[28px] border border-white/70 bg-white/80 p-6 shadow-sm">
+        <div className="flex flex-wrap items-baseline justify-between gap-3">
+          <h2 className="text-base font-semibold text-zinc-900">
+            Price action · last 120 sessions
+          </h2>
+          <div className="text-xs text-zinc-500">
+            Entry / Stop / Target overlay shown when actionable
+          </div>
+        </div>
+        <div className="mt-4">
+          <PriceChart
+            candles={chartCandles}
+            entryPrice={result.plan?.entry}
+            stopPrice={result.plan?.stop}
+            targetPrice={result.plan?.target}
+            variant="plain"
+          />
+        </div>
+      </section>
+
+      {/* Plan + Thesis row */}
+      <div className="mt-6 grid gap-6 lg:grid-cols-2">
+        <section className="rounded-[28px] border border-white/70 bg-white/80 p-6 shadow-sm">
+          <div className="flex items-center justify-between gap-3">
+            <h2 className="text-base font-semibold text-zinc-900">Trade plan</h2>
             <Badge tone={decisionTone(result.decision)}>{result.decision}</Badge>
-            <span className="text-xs text-zinc-600">{result.reason}</span>
           </div>
-          <div className="mt-3 text-xs text-zinc-500">Allow earnings: {allowEarnings ? "ON" : "OFF"}</div>
-        </div>
-      </div>
-
-      <div className="mt-8 grid gap-4 lg:grid-cols-4">
-        <StatCard label="Price" value={`$${result.metrics.price.toFixed(2)}`} hint="Last close" />
-        <StatCard label="Spread" value={`${result.metrics.spreadPct.toFixed(3)}%`} hint="Bid/ask" />
-        <StatCard label="ADV $" value={formatMillions(result.metrics.advUsd)} hint="3M avg" />
-        <StatCard label="ATR" value={`${result.metrics.atrPct.toFixed(2)}%`} hint="14d volatility" />
-      </div>
-
-      <div className="mt-6 grid gap-6 lg:grid-cols-[1.35fr_0.65fr]">
-        <section className="space-y-6">
-          <div className="rounded-[28px] border border-white/70 bg-white/80 p-6 shadow-sm">
-            <div className="flex flex-wrap items-center justify-between gap-3">
-              <div>
-                <div className="text-xs uppercase tracking-[0.24em] text-zinc-500">Market tape</div>
-                <div className="mt-1 text-lg font-semibold text-zinc-900">Price action & context</div>
-              </div>
-              <div className="text-xs text-zinc-500">120 trading days</div>
+          {result.plan ? (
+            <div className="mt-4 space-y-1">
+              <Row label="Entry">
+                <span className="tabular-nums">
+                  {usd.format(result.plan.entry)}
+                </span>
+              </Row>
+              <Row label="Stop">
+                <span className="tabular-nums">
+                  {usd.format(result.plan.stop)}
+                </span>
+              </Row>
+              <Row label="Target">
+                <span className="tabular-nums">
+                  {usd.format(result.plan.target)}
+                </span>
+              </Row>
+              <Row label="Risk / reward">
+                <span className="tabular-nums">{result.plan.rr}x</span>
+              </Row>
+              <Row label="Est. hold">{result.plan.estHold}</Row>
             </div>
-            <div className="mt-4">
-              <PriceChart
-                candles={chartCandles}
-                entryPrice={result.plan?.entry}
-                stopPrice={result.plan?.stop}
-                targetPrice={result.plan?.target}
-                variant="plain"
-              />
+          ) : (
+            <div className="mt-4 rounded-2xl border border-dashed border-zinc-200 bg-white/40 p-4 text-sm text-zinc-600">
+              No actionable plan — setup hasn&apos;t triggered. Watching for
+              confirmation.
             </div>
-          </div>
-
-          <div className="grid gap-4 lg:grid-cols-2">
-            <div className="rounded-[28px] border border-white/70 bg-white/80 p-6 shadow-sm">
-              <div className="text-xs uppercase tracking-[0.24em] text-zinc-500">Overview</div>
-              <div className="mt-4 space-y-2 text-sm">
-                <InfoRow label="52W high" value={`$${high52.toFixed(2)} (${fromHigh.toFixed(1)}%)`} />
-                <InfoRow label="52W low" value={`$${low52.toFixed(2)} (${fromLow.toFixed(1)}%)`} />
-                <InfoRow label="Relative strength" value={`${result.metrics.rs60.toFixed(2)} slope`} />
-                <InfoRow label="Earnings" value={symbol.earningsDate ?? "No date"} />
-                <InfoRow label="Catalyst" value={symbol.hasCatalyst ? "Present" : "None"} />
-              </div>
-            </div>
-            <div className="rounded-[28px] border border-white/70 bg-white/80 p-6 shadow-sm">
-              <div className="text-xs uppercase tracking-[0.24em] text-zinc-500">Trade plan</div>
-              {result.plan ? (
-                <div className="mt-4 space-y-3 text-sm">
-                  <InfoRow label="Entry" value={String(result.plan.entry)} />
-                  <InfoRow label="Stop" value={String(result.plan.stop)} />
-                  <InfoRow label="Target" value={String(result.plan.target)} />
-                  <InfoRow label="Risk/Reward" value={`${result.plan.rr}x`} />
-                  <InfoRow label="Est. hold" value={result.plan.estHold} />
-                </div>
-              ) : (
-                <div className="mt-4 rounded-2xl border border-dashed border-zinc-200 bg-white p-4 text-sm text-zinc-600">
-                  No trade plan is shown unless the setup qualifies as TRADE.
-                </div>
-              )}
-            </div>
-          </div>
-
-          {thesis ? (
-            <div className="rounded-[28px] border border-white/70 bg-white/80 p-6 shadow-sm">
-              <div className="flex items-center justify-between gap-3">
-                <div className="text-xs uppercase tracking-[0.24em] text-zinc-500">Thesis</div>
-                <Badge tone="info">Watchlist · {watchEntry?.status ?? "active"}</Badge>
-              </div>
-
-              <p className="mt-4 text-sm leading-relaxed text-zinc-700">{thesis.summary}</p>
-
-              <div className="mt-4 space-y-2">
-                <ThesisRow label="Setup tag">
-                  <span className="inline-flex flex-wrap items-center justify-end gap-2">
-                    <span>{thesis.setup_tag ?? "—"}</span>
-                    {tagMismatch ? (
-                      <>
-                        <Badge tone="watch">
-                          Engine sees: {result.gateSummary.setup}
-                        </Badge>
-                        <span className="text-xs font-normal italic text-zinc-500">
-                          Disagreement is signal.
-                        </span>
-                      </>
-                    ) : null}
-                  </span>
-                </ThesisRow>
-
-                {typeof thesis.confidence === "number" ? (
-                  <ThesisRow label="Confidence">
-                    <ConfidenceDots value={thesis.confidence} />
-                  </ThesisRow>
-                ) : null}
-
-                <ThesisRow label="Targets">
-                  <span className="tabular-nums">
-                    Entry {usd.format(thesis.entry_target)} → Exit{" "}
-                    {usd.format(thesis.exit_target)}
-                  </span>
-                </ThesisRow>
-
-                <div className="border-b border-dashed border-zinc-200 py-2 text-sm">
-                  <div className="text-zinc-500">Risk</div>
-                  <div className="mt-2 grid gap-2 sm:grid-cols-2">
-                    <div className="rounded-2xl border border-zinc-200 bg-white/60 p-3">
-                      <div className="font-medium tabular-nums text-zinc-900">
-                        Stop{" "}
-                        {result.plan?.stop != null
-                          ? usd.format(result.plan.stop)
-                          : "—"}
-                      </div>
-                      <div className="mt-1 text-xs text-zinc-500">
-                        engine — where I cut risk
-                      </div>
-                    </div>
-                    <div className="rounded-2xl border border-zinc-200 bg-white/60 p-3">
-                      <div className="font-medium tabular-nums text-zinc-900">
-                        Invalidation {usd.format(thesis.invalidation_price)}
-                      </div>
-                      <div className="mt-1 text-xs text-zinc-500">
-                        you — where I was wrong
-                      </div>
-                    </div>
-                  </div>
-                </div>
-
-                <ThesisRow label="Suggested shares">
-                  <span className="tabular-nums">
-                    {intFmt.format(thesisShares)} shares ·{" "}
-                    {riskPct.toLocaleString("en-US", {
-                      maximumFractionDigits: 2,
-                    })}
-                    % risk · {usd.format(accountEquity).replace(/\.00$/, "")} acct
-                  </span>
-                </ThesisRow>
-
-                <ThesisRow label="Horizon">
-                  {thesisHorizon ? (
-                    <Badge tone={horizonTone(thesisHorizon)}>
-                      Horizon {thesis.time_horizon} (
-                      {thesisDays >= 0
-                        ? `${thesisDays} days`
-                        : `${Math.abs(thesisDays)} days ago`}
-                      )
-                    </Badge>
-                  ) : (
-                    "—"
-                  )}
-                </ThesisRow>
-
-                {thesis.catalysts.length > 0 ? (
-                  <div className="py-2 text-sm">
-                    <div className="text-zinc-500">Catalysts</div>
-                    <ul className="mt-2 list-disc space-y-1 pl-5 text-zinc-800">
-                      {thesis.catalysts.map((c) => (
-                        <li key={c}>{c}</li>
-                      ))}
-                    </ul>
-                  </div>
-                ) : null}
-              </div>
-            </div>
-          ) : watchEntry ? (
-            <div className="rounded-[28px] border border-white/70 bg-white/80 p-6 shadow-sm">
-              <div className="text-xs uppercase tracking-[0.24em] text-zinc-500">Thesis</div>
-              <div className="mt-3 flex items-center gap-2 text-sm">
-                <Badge tone="soft">Watchlist · {watchEntry.status}</Badge>
-              </div>
-              <p className="mt-4 text-sm leading-relaxed text-zinc-600">
-                Watchlist status:{" "}
-                <span className="font-medium text-zinc-800">{watchEntry.status}</span>
-                . Add a thesis in <code className="rounded bg-zinc-100 px-1 py-0.5 text-xs">data/watchlist.yaml</code>{" "}
-                to see this panel populated.
-              </p>
-            </div>
-          ) : null}
-
-          <div className="rounded-[28px] border border-white/70 bg-white/80 p-6 shadow-sm">
-            <div className="text-xs uppercase tracking-[0.24em] text-zinc-500">Fundamentals</div>
-            <div className="mt-4 rounded-2xl border border-dashed border-zinc-200 p-5 text-sm text-zinc-500">
-              <div className="font-medium text-zinc-700">On the roadmap</div>
-              <div className="mt-2 leading-relaxed">
-                Fundamental data — P/E, market cap, EV/EBITDA, revenue growth, and margins — is planned for a future release. This engine is currently optimized for technical price structure and momentum signals.
-              </div>
-            </div>
+          )}
+          <div className="mt-4 text-xs text-zinc-500">
+            Earnings flag is{" "}
+            <span className="font-semibold uppercase tracking-wide">
+              {allowEarnings ? "ON" : "OFF"}
+            </span>
+            .{" "}
+            <Link
+              className="text-emerald-800 hover:underline"
+              href={`/symbol/${encodeURIComponent(result.ticker)}?allowEarnings=${allowEarnings ? "0" : "1"}`}
+            >
+              Toggle
+            </Link>
           </div>
         </section>
 
-        <aside className="space-y-6">
-          <div className="rounded-[28px] border border-white/70 bg-white/80 p-6 shadow-sm">
-            <div className="text-xs uppercase tracking-[0.24em] text-zinc-500">Catalysts</div>
-            <div className="mt-4 space-y-3 text-sm text-zinc-600">
-              <div className="rounded-2xl border border-dashed border-zinc-200 bg-white p-3">
-                Add earnings call, guidance changes, or news catalysts here.
+        {thesis ? (
+          <section className="rounded-[28px] border border-white/70 bg-white/80 p-6 shadow-sm">
+            <div className="flex items-center justify-between gap-3">
+              <h2 className="text-base font-semibold text-zinc-900">Thesis</h2>
+              <Badge tone="info">
+                Watchlist · {watchEntry?.status ?? "active"}
+              </Badge>
+            </div>
+            <p className="mt-3 text-sm leading-relaxed text-zinc-700">
+              {thesis.summary}
+            </p>
+
+            <div className="mt-4 grid gap-2 rounded-2xl border border-zinc-200 bg-white/60 p-3 sm:grid-cols-2">
+              <div>
+                <div className="font-medium tabular-nums text-zinc-900">
+                  Stop{" "}
+                  {result.plan?.stop != null
+                    ? usd.format(result.plan.stop)
+                    : "—"}
+                </div>
+                <div className="mt-0.5 text-xs text-zinc-500">
+                  engine · where I cut risk
+                </div>
               </div>
-              <Link
-                className="inline-flex items-center text-xs font-semibold uppercase tracking-[0.2em] text-emerald-800"
-                href={`/symbol/${encodeURIComponent(result.ticker)}?allowEarnings=${allowEarnings ? "0" : "1"}`}
-              >
-                Toggle earnings trades
-              </Link>
+              <div>
+                <div className="font-medium tabular-nums text-zinc-900">
+                  Invalidation {usd.format(thesis.invalidation_price)}
+                </div>
+                <div className="mt-0.5 text-xs text-zinc-500">
+                  you · where I was wrong
+                </div>
+              </div>
             </div>
-          </div>
 
-          <GeminiExplain result={result} />
-
-          <div className="rounded-[28px] border border-white/70 bg-white/80 p-6 shadow-sm">
-            <div className="text-xs uppercase tracking-[0.24em] text-zinc-500">Gate breakdown</div>
-            <div className="mt-3">
-              <GateBreakdown gates={result.gates} />
+            <div className="mt-4 space-y-1">
+              <Row label="Setup tag">
+                <span className="inline-flex flex-wrap items-center justify-end gap-2">
+                  <span>{thesis.setup_tag ?? "—"}</span>
+                  {tagMismatch ? (
+                    <Badge tone="watch">
+                      Engine sees: {result.gateSummary.setup}
+                    </Badge>
+                  ) : null}
+                </span>
+              </Row>
+              {typeof thesis.confidence === "number" ? (
+                <Row label="Confidence">
+                  <ConfidenceDots value={thesis.confidence} />
+                </Row>
+              ) : null}
+              <Row label="Targets">
+                <span className="tabular-nums">
+                  {usd.format(thesis.entry_target)} →{" "}
+                  {usd.format(thesis.exit_target)}
+                </span>
+              </Row>
+              <Row label="Suggested shares">
+                <span className="tabular-nums">
+                  {intFmt.format(thesisShares)} · {riskPct}% risk
+                </span>
+              </Row>
+              <Row label="Horizon">
+                {thesisHorizon ? (
+                  <Badge tone={horizonTone(thesisHorizon)}>
+                    {thesis.time_horizon}
+                    {" · "}
+                    {thesisDays >= 0
+                      ? `${thesisDays}d left`
+                      : `${Math.abs(thesisDays)}d ago`}
+                  </Badge>
+                ) : (
+                  "—"
+                )}
+              </Row>
             </div>
-          </div>
 
-          <div className="rounded-[28px] border border-white/70 bg-white/80 p-6 text-sm text-zinc-600 shadow-sm">
-            <div className="text-xs uppercase tracking-[0.24em] text-zinc-500">Reminder</div>
-            <div className="mt-3">This demo is designed to help you trade less, with cleaner context.</div>
-            <div className="mt-2 text-xs text-zinc-400">Not investment advice.</div>
-          </div>
-        </aside>
+            {thesis.catalysts.length > 0 ? (
+              <div className="mt-4 text-sm">
+                <div className="text-xs uppercase tracking-[0.2em] text-zinc-500">
+                  Catalysts
+                </div>
+                <ul className="mt-2 list-disc space-y-0.5 pl-5 text-zinc-700">
+                  {thesis.catalysts.map((c) => (
+                    <li key={c}>{c}</li>
+                  ))}
+                </ul>
+              </div>
+            ) : null}
+          </section>
+        ) : watchEntry ? (
+          <section className="rounded-[28px] border border-white/70 bg-white/80 p-6 shadow-sm">
+            <div className="flex items-center justify-between gap-3">
+              <h2 className="text-base font-semibold text-zinc-900">Thesis</h2>
+              <Badge tone="soft">Watchlist · {watchEntry.status}</Badge>
+            </div>
+            <p className="mt-3 text-sm leading-relaxed text-zinc-600">
+              Watchlist status:{" "}
+              <span className="font-medium text-zinc-800">
+                {watchEntry.status}
+              </span>
+              . Add a thesis in{" "}
+              <code className="rounded bg-zinc-100 px-1 py-0.5 text-xs">
+                data/watchlist.yaml
+              </code>{" "}
+              to populate this panel.
+            </p>
+          </section>
+        ) : (
+          <section className="rounded-[28px] border border-dashed border-zinc-200 bg-white/40 p-6 text-sm text-zinc-600">
+            <div className="text-xs uppercase tracking-[0.2em] text-zinc-500">
+              Not on watchlist
+            </div>
+            <p className="mt-2 leading-relaxed">
+              This ticker isn&apos;t in your watchlist. Add it in{" "}
+              <code className="rounded bg-zinc-100 px-1 py-0.5 text-xs">
+                data/watchlist.yaml
+              </code>{" "}
+              to attach a thesis and start tracking invalidations.
+            </p>
+          </section>
+        )}
       </div>
+
+      {/* Quick stats */}
+      <section className="mt-6 rounded-[28px] border border-white/70 bg-white/80 p-6 shadow-sm">
+        <h2 className="text-base font-semibold text-zinc-900">Context</h2>
+        <div className="mt-3 grid gap-x-6 gap-y-1 sm:grid-cols-2">
+          <Row label="Relative strength vs SPY (60d)">
+            <span className="tabular-nums">
+              {result.metrics.rs60.toFixed(2)}
+            </span>
+          </Row>
+          <Row label="Earnings date">{symbol.earningsDate ?? "—"}</Row>
+          <Row label="Catalyst flag">
+            {symbol.hasCatalyst ? "Present" : "None"}
+          </Row>
+          <Row label="Trend / vol / liquidity">
+            <span className="text-xs">
+              {result.gateSummary.trend} · {result.gateSummary.vol} ·{" "}
+              {result.gateSummary.liquidity}
+            </span>
+          </Row>
+        </div>
+      </section>
+
+      {/* Why this decision — gate-by-gate */}
+      <section className="mt-6 rounded-[28px] border border-white/70 bg-white/80 p-6 shadow-sm">
+        <h2 className="text-base font-semibold text-zinc-900">
+          Why this decision
+        </h2>
+        <div className="mt-3 text-sm text-zinc-600">
+          Six gates. First BLOCK wins.
+        </div>
+        <div className="mt-4">
+          <GateBreakdown gates={result.gates} />
+        </div>
+      </section>
+
+      {/* Gemini explanation — bottom, optional */}
+      <section className="mt-6">
+        <GeminiExplain result={result} />
+      </section>
     </main>
+  );
+}
+
+function Stat({
+  label,
+  value,
+  hint,
+}: {
+  label: string;
+  value: string;
+  hint?: string;
+}) {
+  return (
+    <div className="rounded-2xl border border-white/70 bg-white/80 p-3 shadow-sm">
+      <div className="text-[10px] uppercase tracking-[0.2em] text-zinc-500">
+        {label}
+      </div>
+      <div className="mt-1 text-base font-semibold tabular-nums text-zinc-900">
+        {value}
+      </div>
+      {hint ? (
+        <div className="mt-0.5 text-[11px] text-zinc-500">{hint}</div>
+      ) : null}
+    </div>
   );
 }
