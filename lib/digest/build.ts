@@ -14,6 +14,7 @@ import { runScan } from "@/lib/engine/scan";
 import { fetchSpyCandles } from "@/lib/data/yahoo";
 import type { DecisionResult, ScanConfig } from "@/lib/types";
 import { buildNarrative } from "@/lib/digest/narrative";
+import { preferenceScore } from "@/lib/preferences";
 
 export type DigestPick = {
   result: DecisionResult;
@@ -68,6 +69,11 @@ export async function buildDigest(): Promise<DigestPick[]> {
     if (a.metrics.sustainedHighVol !== b.metrics.sustainedHighVol) {
       return a.metrics.sustainedHighVol ? -1 : 1;
     }
+    // Then user preference: Utah-based + healthcare get a soft boost so
+    // the user sees names they understand earlier in the digest.
+    const aPref = preferenceScore({ ticker: a.ticker, sector: a.sector });
+    const bPref = preferenceScore({ ticker: b.ticker, sector: b.sector });
+    if (aPref !== bPref) return bPref - aPref;
     // Then R:R, then ADV$ — both descending.
     const aRr = a.plan?.rr ?? 0;
     const bRr = b.plan?.rr ?? 0;

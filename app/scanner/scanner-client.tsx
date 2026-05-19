@@ -7,6 +7,7 @@ import { Badge } from "@/components/Badge";
 import { Drawer } from "@/components/Drawer";
 import { GateBreakdown } from "@/components/GateBreakdown";
 import type { Decision, DecisionResult, SetupTag } from "@/lib/types";
+import { isHealthcareSector, isUtahTicker } from "@/lib/preferences";
 
 type ScanResponse = {
   config: {
@@ -83,6 +84,76 @@ const SETUP_CHIPS: Array<SetupTag | "ALL"> = [
   "NONE",
 ];
 
+type ToggleColor = "orange" | "emerald" | "rose";
+
+const COLOR_STYLES: Record<
+  ToggleColor,
+  { active: string; idle: string; countActive: string; countIdle: string }
+> = {
+  orange: {
+    active: "bg-orange-600 text-white",
+    idle: "border border-orange-300 bg-orange-50 text-orange-900 hover:bg-orange-100",
+    countActive: "text-orange-200",
+    countIdle: "text-orange-500",
+  },
+  emerald: {
+    active: "bg-emerald-700 text-white",
+    idle: "border border-emerald-300 bg-emerald-50 text-emerald-900 hover:bg-emerald-100",
+    countActive: "text-emerald-200",
+    countIdle: "text-emerald-600",
+  },
+  rose: {
+    active: "bg-rose-600 text-white",
+    idle: "border border-rose-300 bg-rose-50 text-rose-900 hover:bg-rose-100",
+    countActive: "text-rose-200",
+    countIdle: "text-rose-500",
+  },
+};
+
+function ToggleChip({
+  active,
+  count,
+  onClick,
+  label,
+  colorClass,
+  title,
+}: {
+  active: boolean;
+  count: number;
+  onClick: () => void;
+  label: string;
+  colorClass: ToggleColor;
+  title?: string;
+}) {
+  const empty = count === 0 && !active;
+  const style = COLOR_STYLES[colorClass];
+  return (
+    <button
+      onClick={onClick}
+      disabled={empty}
+      title={title}
+      className={clsx(
+        "inline-flex items-center gap-1.5 rounded-full py-2 px-3 text-xs font-semibold transition-colors",
+        active
+          ? style.active
+          : empty
+            ? "border border-zinc-200 bg-white text-zinc-400 cursor-not-allowed"
+            : style.idle,
+      )}
+    >
+      <span>{label}</span>
+      <span
+        className={clsx(
+          "tabular-nums",
+          active ? style.countActive : empty ? "text-zinc-300" : style.countIdle,
+        )}
+      >
+        {count}
+      </span>
+    </button>
+  );
+}
+
 export default function ScannerClient() {
   const [includeBlocked, setIncludeBlocked] = useState(false);
   const [allowEarnings, setAllowEarnings] = useState(false);
@@ -92,6 +163,8 @@ export default function ScannerClient() {
   const [search, setSearch] = useState("");
   const [setupFilter, setSetupFilter] = useState<SetupTag | "ALL">("ALL");
   const [momentumOnly, setMomentumOnly] = useState(false);
+  const [utahOnly, setUtahOnly] = useState(false);
+  const [healthcareOnly, setHealthcareOnly] = useState(false);
 
   const [data, setData] = useState<ScanResponse | null>(null);
   const [loading, setLoading] = useState(false);
@@ -126,9 +199,13 @@ export default function ScannerClient() {
       setupFilter === "ALL"
         ? afterSearch
         : afterSearch.filter((r) => r.gateSummary.setup === setupFilter);
-    if (!momentumOnly) return afterSetup;
-    return afterSetup.filter((r) => r.metrics.sustainedHighVol);
-  }, [data, search, setupFilter, momentumOnly]);
+    return afterSetup.filter((r) => {
+      if (momentumOnly && !r.metrics.sustainedHighVol) return false;
+      if (utahOnly && !isUtahTicker(r.ticker)) return false;
+      if (healthcareOnly && !isHealthcareSector(r.sector)) return false;
+      return true;
+    });
+  }, [data, search, setupFilter, momentumOnly, utahOnly, healthcareOnly]);
 
   const summary = useMemo(() => {
     const results = filteredResults;
@@ -143,9 +220,9 @@ export default function ScannerClient() {
     return { trade, watch, pass, total: results.length };
   }, [filteredResults]);
 
-  // Count of 3W-momentum candidates in the current search window (before the
-  // setup filter and the momentum toggle itself are applied).
-  const momentumCount = useMemo(() => {
+  // Counts for the orthogonal toggles (computed pre-toggle so each chip
+  // always shows what's available regardless of which other toggles are on).
+  const toggleCounts = useMemo(() => {
     const results = data?.results ?? [];
     const q = search.trim().toLowerCase();
     const afterSearch = q
@@ -156,8 +233,13 @@ export default function ScannerClient() {
             r.sector.toLowerCase().includes(q),
         )
       : results;
-    return afterSearch.filter((r) => r.metrics.sustainedHighVol).length;
+    return {
+      momentum: afterSearch.filter((r) => r.metrics.sustainedHighVol).length,
+      utah: afterSearch.filter((r) => isUtahTicker(r.ticker)).length,
+      healthcare: afterSearch.filter((r) => isHealthcareSector(r.sector)).length,
+    };
   }, [data, search]);
+  const momentumCount = toggleCounts.momentum;
 
   // Setup counts computed BEFORE the setupFilter so chips show what's
   // available regardless of which chip is currently active.
@@ -414,33 +496,30 @@ export default function ScannerClient() {
             );
           })}
           <div className="ml-2 h-5 w-px bg-zinc-200" aria-hidden="true" />
-          <button
+          <ToggleChip
+            active={momentumOnly}
+            count={toggleCounts.momentum}
             onClick={() => setMomentumOnly((v) => !v)}
-            disabled={momentumCount === 0 && !momentumOnly}
-            className={clsx(
-              "inline-flex items-center gap-1.5 rounded-full py-2 px-3 text-xs font-semibold transition-colors",
-              momentumOnly
-                ? "bg-orange-600 text-white"
-                : momentumCount === 0
-                  ? "border border-zinc-200 bg-white text-zinc-400 cursor-not-allowed"
-                  : "border border-orange-300 bg-orange-50 text-orange-900 hover:bg-orange-100",
-            )}
+            label="🌀 3W momentum"
+            colorClass="orange"
             title="High vol + price tracking 15-day SMA, not a one-day spike"
-          >
-            <span>🌀 3W momentum</span>
-            <span
-              className={clsx(
-                "tabular-nums",
-                momentumOnly
-                  ? "text-orange-200"
-                  : momentumCount === 0
-                    ? "text-zinc-300"
-                    : "text-orange-500",
-              )}
-            >
-              {momentumCount}
-            </span>
-          </button>
+          />
+          <ToggleChip
+            active={utahOnly}
+            count={toggleCounts.utah}
+            onClick={() => setUtahOnly((v) => !v)}
+            label="🏔️ Utah"
+            colorClass="emerald"
+            title="Companies headquartered in Utah"
+          />
+          <ToggleChip
+            active={healthcareOnly}
+            count={toggleCounts.healthcare}
+            onClick={() => setHealthcareOnly((v) => !v)}
+            label="❤️ Healthcare"
+            colorClass="rose"
+            title="Healthcare sector"
+          />
         </div>
 
         {error && (

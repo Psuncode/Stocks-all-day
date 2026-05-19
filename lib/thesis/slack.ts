@@ -15,6 +15,7 @@
  */
 
 import type { DigestPick } from "@/lib/digest/build";
+import { isHealthcareSector, isUtahTicker } from "@/lib/preferences";
 
 export type FireRecord = {
   ticker: string;
@@ -139,7 +140,11 @@ async function pickBlocks(
     const sector = r.sector ? `  ·  ${r.sector}` : "";
 
     const momentumTag = r.metrics.sustainedHighVol ? "  ·  🌀 3W momentum" : "";
-    const headerLine = `${tickerLink}  ${price}  ·  ${decisionTag(r.decision)}${setupTag}${momentumTag}${sector}`;
+    const prefTags: string[] = [];
+    if (isUtahTicker(r.ticker)) prefTags.push("🏔️ Utah");
+    if (isHealthcareSector(r.sector)) prefTags.push("❤️ Healthcare");
+    const prefSuffix = prefTags.length ? "  ·  " + prefTags.join(" · ") : "";
+    const headerLine = `${tickerLink}  ${price}  ·  ${decisionTag(r.decision)}${setupTag}${momentumTag}${sector}${prefSuffix}`;
     const narrative = `> ${pick.narrative}`;
     const planLine = r.plan
       ? `\nEntry \`$${r.plan.entry}\` → Stop \`$${r.plan.stop}\` → Target \`$${r.plan.target}\`  ·  *R:R ${r.plan.rr}x*  ·  est ${r.plan.estHold}`
