@@ -93,8 +93,9 @@ export default async function RootLayout({
               <Wordmark />
               <nav className="hidden items-center gap-6 text-sm font-medium text-zinc-600 md:flex">
                 <NavLink href="/scanner">Scanner</NavLink>
-                <NavLink href="/watchlist">Watchlist</NavLink>
                 <NavLink href="/digest">Digest</NavLink>
+                <NavLink href="/watchlist">Watchlist</NavLink>
+                <NavLink href="/journal">Journal</NavLink>
                 <NavLink href="/settings">Settings</NavLink>
               </nav>
             </div>
