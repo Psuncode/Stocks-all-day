@@ -166,6 +166,12 @@ export default function ScannerClient() {
   const [utahOnly, setUtahOnly] = useState(false);
   const [healthcareOnly, setHealthcareOnly] = useState(false);
 
+  // Feature F — quick-watch state. Loaded from /api/watch on mount;
+  // toggled by per-row buttons.
+  const [watched, setWatched] = useState<Set<string>>(new Set());
+  const [watchInflight, setWatchInflight] = useState<Set<string>>(new Set());
+  const [watchEnabled, setWatchEnabled] = useState(true);
+
   const [data, setData] = useState<ScanResponse | null>(null);
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
@@ -298,6 +304,76 @@ export default function ScannerClient() {
     const csv = toCsv(rows);
     const stamp = new Date().toISOString().slice(0, 10);
     downloadText(`scanner_${stamp}.csv`, csv);
+  }
+
+  // Initial load of the quick-watch set. Failure-soft — if KV isn't
+  // configured the endpoint returns kv:false and the button just shows
+  // as inactive forever (we set watchEnabled=false to hide UI).
+  useEffect(() => {
+    let cancelled = false;
+    fetch("/api/watch")
+      .then((r) => r.json())
+      .then((json: { tickers?: string[]; kv?: boolean }) => {
+        if (cancelled) return;
+        if (json.kv === false) {
+          setWatchEnabled(false);
+          return;
+        }
+        setWatched(new Set((json.tickers ?? []).map((t) => t.toUpperCase())));
+      })
+      .catch(() => {
+        if (!cancelled) setWatchEnabled(false);
+      });
+    return () => {
+      cancelled = true;
+    };
+  }, []);
+
+  async function toggleWatch(r: DecisionResult) {
+    if (!watchEnabled) return;
+    const t = r.ticker.toUpperCase();
+    if (watchInflight.has(t)) return;
+    setWatchInflight((prev) => {
+      const next = new Set(prev);
+      next.add(t);
+      return next;
+    });
+    // Optimistic flip
+    const wasWatched = watched.has(t);
+    setWatched((prev) => {
+      const next = new Set(prev);
+      if (wasWatched) next.delete(t);
+      else next.add(t);
+      return next;
+    });
+    try {
+      const res = await fetch("/api/watch", {
+        method: "POST",
+        headers: { "content-type": "application/json" },
+        body: JSON.stringify({
+          ticker: t,
+          name: r.name,
+          sector: r.sector,
+          decision: r.decision,
+          setup: r.gateSummary.setup,
+        }),
+      });
+      if (!res.ok) throw new Error(String(res.status));
+    } catch {
+      // Revert on failure
+      setWatched((prev) => {
+        const next = new Set(prev);
+        if (wasWatched) next.add(t);
+        else next.delete(t);
+        return next;
+      });
+    } finally {
+      setWatchInflight((prev) => {
+        const next = new Set(prev);
+        next.delete(t);
+        return next;
+      });
+    }
   }
 
   useEffect(() => {
@@ -614,8 +690,15 @@ export default function ScannerClient() {
                     </div>
                   )}
 
-                  {/* Explain button */}
-                  <div className="mt-3">
+                  {/* Action buttons — Watch + Explain */}
+                  <div className="mt-3 flex flex-wrap gap-2">
+                    {watchEnabled ? (
+                      <WatchButton
+                        watched={watched.has(r.ticker.toUpperCase())}
+                        loading={watchInflight.has(r.ticker.toUpperCase())}
+                        onClick={() => toggleWatch(r)}
+                      />
+                    ) : null}
                     <button
                       onClick={() => openWhyBlocked(r.ticker)}
                       className="rounded-full border border-emerald-200 bg-emerald-50 px-3 py-1.5 text-[11px] font-semibold uppercase tracking-[0.2em] text-emerald-800"
@@ -694,12 +777,21 @@ export default function ScannerClient() {
                         )}
                       </td>
                       <td className="border-b px-4 py-3">
-                        <button
-                          onClick={() => openWhyBlocked(r.ticker)}
-                          className="rounded-full border border-emerald-200 bg-emerald-50 px-3 py-1 text-[11px] font-semibold uppercase tracking-[0.2em] text-emerald-800"
-                        >
-                          Explain
-                        </button>
+                        <div className="flex items-center gap-2">
+                          {watchEnabled ? (
+                            <WatchButton
+                              watched={watched.has(r.ticker.toUpperCase())}
+                              loading={watchInflight.has(r.ticker.toUpperCase())}
+                              onClick={() => toggleWatch(r)}
+                            />
+                          ) : null}
+                          <button
+                            onClick={() => openWhyBlocked(r.ticker)}
+                            className="rounded-full border border-emerald-200 bg-emerald-50 px-3 py-1 text-[11px] font-semibold uppercase tracking-[0.2em] text-emerald-800"
+                          >
+                            Explain
+                          </button>
+                        </div>
                       </td>
                     </tr>
                   ))}
@@ -761,5 +853,34 @@ export default function ScannerClient() {
         )}
       </Drawer>
     </div>
+  );
+}
+
+function WatchButton({
+  watched,
+  loading,
+  onClick,
+}: {
+  watched: boolean;
+  loading: boolean;
+  onClick: () => void;
+}) {
+  return (
+    <button
+      onClick={onClick}
+      disabled={loading}
+      aria-pressed={watched}
+      aria-label={watched ? "Remove from quick watch" : "Add to quick watch"}
+      className={clsx(
+        "inline-flex h-7 items-center gap-1.5 rounded-full px-3 text-[11px] font-semibold uppercase tracking-[0.2em] transition-colors",
+        watched
+          ? "bg-emerald-700 text-white hover:bg-emerald-800"
+          : "border border-zinc-300 bg-white text-zinc-600 hover:bg-zinc-50",
+        loading && "opacity-60",
+      )}
+    >
+      <span aria-hidden="true">{watched ? "👁" : "👁‍🗨"}</span>
+      <span>{watched ? "Watching" : "Watch"}</span>
+    </button>
   );
 }

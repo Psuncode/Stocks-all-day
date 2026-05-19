@@ -1,9 +1,13 @@
+import Link from "next/link";
 import { loadWatchlist } from "@/lib/thesis/load";
 import { evaluateRule } from "@/lib/thesis/evaluate-rules";
 import { daysUntil, horizonState } from "@/lib/thesis/horizon";
 import { getCachedSymbol } from "@/lib/data/cached-provider";
 import WatchlistView from "@/app/watchlist/watchlist-client";
 import type { EnrichedEntry, FireRecord } from "@/app/watchlist/_thesis-card";
+import { listQuickWatch, type QuickWatchEntry } from "@/lib/watch/quick-watch";
+import { kvAvailable } from "@/lib/data/kv";
+import { Badge } from "@/components/Badge";
 
 // Page itself is dynamic (per-request), but per-symbol data is cached at
 // the call site via getCachedSymbol (15-min TTL).
@@ -140,6 +144,125 @@ export default async function WatchlistPage() {
           riskPct={watchlist.risk_pct}
         />
       </div>
+
+      {/* Feature F — quick watch section (KV-backed). Rendered after the
+          YAML-driven view so thesis entries stay primary. */}
+      <QuickWatchSection />
     </main>
+  );
+}
+
+async function QuickWatchSection() {
+  if (!kvAvailable()) return null;
+  const entries = await listQuickWatch();
+  if (entries.length === 0) {
+    return (
+      <section className="mt-10 rounded-[28px] border border-dashed border-zinc-200 bg-white/40 p-6">
+        <div className="flex items-baseline justify-between gap-3">
+          <h2 className="font-[family:var(--font-display)] text-xl text-zinc-900">
+            Quick watch
+          </h2>
+          <span className="text-xs text-zinc-500">empty</span>
+        </div>
+        <p className="mt-2 text-sm text-zinc-600">
+          Tap the 👁 button on a row in{" "}
+          <Link href="/scanner" className="text-emerald-800 underline">
+            Scanner
+          </Link>{" "}
+          to drop tickers here. Lighter than the thesis-driven list above;
+          no entry/exit required.
+        </p>
+      </section>
+    );
+  }
+
+  const enriched = await pMapLimit(entries, 5, async (entry) => {
+    let lastPrice: number | null = null;
+    try {
+      const sym = await getCachedSymbol(entry.ticker);
+      lastPrice = sym?.quote.last ?? null;
+    } catch {
+      // ignore
+    }
+    return { entry, lastPrice };
+  });
+
+  return (
+    <section className="mt-10">
+      <div className="flex items-baseline justify-between gap-3">
+        <h2 className="font-[family:var(--font-display)] text-xl text-zinc-900">
+          Quick watch
+        </h2>
+        <span className="text-xs text-zinc-500 tabular-nums">
+          {entries.length} ticker{entries.length === 1 ? "" : "s"}
+        </span>
+      </div>
+      <p className="mt-1 text-sm text-zinc-600">
+        Tapped from the scanner. No thesis required.
+      </p>
+      <div className="mt-4 grid gap-3 sm:grid-cols-2 lg:grid-cols-3">
+        {enriched.map(({ entry, lastPrice }) => (
+          <QuickWatchCard key={entry.ticker} entry={entry} lastPrice={lastPrice} />
+        ))}
+      </div>
+    </section>
+  );
+}
+
+function QuickWatchCard({
+  entry,
+  lastPrice,
+}: {
+  entry: QuickWatchEntry;
+  lastPrice: number | null;
+}) {
+  const added = new Date(entry.added_at);
+  const addedStr = isNaN(added.getTime())
+    ? entry.added_at.slice(0, 10)
+    : added.toLocaleDateString("en-US", {
+        month: "short",
+        day: "numeric",
+      });
+  const delta =
+    lastPrice == null ? null : ((lastPrice - 0) / 1) * 0; // placeholder; we don't have add-price
+  void delta;
+
+  return (
+    <Link
+      href={`/symbol/${encodeURIComponent(entry.ticker)}`}
+      className="block rounded-2xl border border-white/70 bg-white/80 p-4 shadow-sm transition-colors hover:bg-white"
+    >
+      <div className="flex items-start justify-between gap-2">
+        <div className="min-w-0">
+          <div className="font-semibold text-zinc-900">{entry.ticker}</div>
+          <div className="truncate text-xs text-zinc-500">
+            {entry.sector} · {entry.name}
+          </div>
+        </div>
+        {entry.decision_at_add !== "—" ? (
+          <Badge
+            tone={
+              entry.decision_at_add === "TRADE"
+                ? "trade"
+                : entry.decision_at_add === "WATCH"
+                  ? "watch"
+                  : "neutral"
+            }
+          >
+            {entry.decision_at_add}
+          </Badge>
+        ) : null}
+      </div>
+      <div className="mt-2 flex items-center justify-between gap-2 text-xs text-zinc-600 tabular-nums">
+        <span>
+          {lastPrice != null ? `$${lastPrice.toFixed(2)}` : "—"} · added {addedStr}
+        </span>
+        {entry.setup_at_add !== "NONE" ? (
+          <span className="text-[10px] uppercase tracking-wider text-zinc-500">
+            {entry.setup_at_add.toLowerCase().replace("_", " ")}
+          </span>
+        ) : null}
+      </div>
+    </Link>
   );
 }
