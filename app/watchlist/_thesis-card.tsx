@@ -176,12 +176,23 @@ export function ThesisCard({
         </div>
       ) : (
         <div className="mt-2 text-xs text-zinc-500">
-          {entry.notes ?? "No thesis yet."}
+          {/* v2.1 T5: for shelved/dropped/exited entries without a thesis,
+              show the drop reason inline instead of the bare "No thesis
+              yet" placeholder. Drop info card below adds structure. */}
+          {entry.dropped_reason ??
+            entry.notes ??
+            (entry.status === "shelved" ||
+            entry.status === "dropped" ||
+            entry.status === "exited"
+              ? `${entry.status} without a reason captured.`
+              : "No thesis yet.")}
         </div>
       )}
 
-      {/* Drop info */}
-      {(entry.status === "dropped" || entry.status === "exited") && (
+      {/* Drop info (now also covers shelved per v2.1 T5) */}
+      {(entry.status === "dropped" ||
+        entry.status === "exited" ||
+        entry.status === "shelved") && (
         <div className="mt-3 rounded-lg border border-zinc-200 bg-zinc-50 px-3 py-2 text-xs text-zinc-600">
           <div className="font-semibold text-zinc-700">
             {entry.status} {entry.dropped_at ? `· ${entry.dropped_at}` : null}

@@ -38,11 +38,13 @@ tickers:
   - ticker: OWLT
     name: Owlet
     status: dropped
+    sector_tag: consumer
     dropped_at: 2026-05-18
     dropped_reason: "Tariff + retail destocking + guidance cut compounding. Timeline too uncertain. Bull case real but needs 6–12 mo leash, not short-term."
 
   - ticker: PTRN
     name: Pattern Group
     status: shelved
+    sector_tag: consumer
     dropped_at: 2026-05-18
     dropped_reason: "Fundamentals strong but momentum chase + insider selling overhang + untested setup. Outside my edge."

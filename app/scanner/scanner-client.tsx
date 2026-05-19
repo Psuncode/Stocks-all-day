@@ -847,7 +847,7 @@ export default function ScannerClient() {
             </div>
             <GateBreakdown gates={drawerDetail.gates} />
             <div className="text-xs text-zinc-500">
-              Demo only. Rule-based gating to reduce bad trades. Not investment advice.
+              Rule-based gating to reduce bad trades. Not investment advice.
             </div>
           </div>
         )}
