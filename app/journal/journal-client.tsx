@@ -814,10 +814,17 @@ function TradeCardMobile({
   const { pnl, rMult } = rowFields(t);
   const hasR = rMult != null;
   return (
-    <button
-      type="button"
+    <div
+      role="button"
+      tabIndex={0}
       onClick={onClick}
-      className="block w-full rounded-2xl border border-white/70 bg-white/80 p-4 text-left shadow-sm transition-colors hover:bg-white"
+      onKeyDown={(e) => {
+        if (e.key === "Enter" || e.key === " ") {
+          e.preventDefault();
+          onClick();
+        }
+      }}
+      className="block w-full cursor-pointer rounded-2xl border border-white/70 bg-white/80 p-4 text-left shadow-sm transition-colors hover:bg-white"
     >
       <div className="flex items-start justify-between gap-2">
         <div className="min-w-0">
@@ -842,7 +849,7 @@ function TradeCardMobile({
         </span>
         <span className={`font-semibold ${moneyTone(pnl)}`}>{fmtMoney(pnl)}</span>
       </div>
-    </button>
+    </div>
   );
 }
 
