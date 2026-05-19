@@ -65,6 +65,29 @@ const TABS = [
     ),
   },
   {
+    href: "/journal",
+    label: "Journal",
+    icon: (active: boolean) => (
+      // Notebook icon — spine + page + a single horizontal rule line.
+      <svg
+        width="22"
+        height="22"
+        viewBox="0 0 24 24"
+        fill="none"
+        stroke="currentColor"
+        strokeWidth={active ? 2.2 : 1.7}
+        strokeLinecap="round"
+        strokeLinejoin="round"
+        aria-hidden="true"
+      >
+        <path d="M6 3h11a1 1 0 0 1 1 1v16a1 1 0 0 1-1 1H6a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2z" />
+        <path d="M8 3v18" />
+        <path d="M12 8h3" />
+        <path d="M12 12h3" />
+      </svg>
+    ),
+  },
+  {
     href: "/settings",
     label: "Settings",
     icon: (active: boolean) => (
