@@ -26,6 +26,26 @@ const TABS = [
     ),
   },
   {
+    href: "/digest",
+    label: "Digest",
+    icon: (active: boolean) => (
+      <svg
+        width="22"
+        height="22"
+        viewBox="0 0 24 24"
+        fill="none"
+        stroke="currentColor"
+        strokeWidth={active ? 2.2 : 1.7}
+        strokeLinecap="round"
+        strokeLinejoin="round"
+        aria-hidden="true"
+      >
+        <path d="M3 17l4-4 4 4 4-8 6 11" />
+        <path d="M3 21h18" />
+      </svg>
+    ),
+  },
+  {
     href: "/watchlist",
     label: "Watchlist",
     icon: (active: boolean) => (

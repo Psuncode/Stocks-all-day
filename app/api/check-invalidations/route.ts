@@ -3,6 +3,8 @@ import { evaluateRule } from "@/lib/thesis/evaluate-rules";
 import { getProvider } from "@/lib/data/provider";
 import { sendSlackDigest, type FireRecord } from "@/lib/thesis/slack";
 import { buildDigest, type DigestPick } from "@/lib/digest/build";
+import { persistDigest } from "@/lib/digest/archive";
+import { todayYmd } from "@/lib/engine/evaluate";
 
 export const runtime = "nodejs";
 export const dynamic = "force-dynamic";
@@ -113,6 +115,23 @@ export async function POST(req: Request): Promise<Response> {
     console.error(
       `[check-invalidations] digest build failed: ${(e as Error).message}`,
     );
+  }
+
+  // Feature E — persist the digest snapshot for the /digest archive. Must
+  // not block the Slack delivery if KV is unavailable (E.5).
+  if (picks.length > 0) {
+    try {
+      const archiveResult = await persistDigest(todayYmd(), picks);
+      if (!archiveResult.ok) {
+        console.warn(
+          `[check-invalidations] digest archive skipped: ${archiveResult.reason}`,
+        );
+      }
+    } catch (e) {
+      console.error(
+        `[check-invalidations] digest archive threw: ${(e as Error).message}`,
+      );
+    }
   }
 
   // Single combined POST: fires (if any) + digest (if any). Skipped when both
