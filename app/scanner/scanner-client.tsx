@@ -138,6 +138,33 @@ export default function ScannerClient() {
     return { trade, watch, pass, total: results.length };
   }, [filteredResults]);
 
+  // Setup counts computed BEFORE the setupFilter so chips show what's
+  // available regardless of which chip is currently active.
+  const setupCounts = useMemo(() => {
+    const results = data?.results ?? [];
+    const q = search.trim().toLowerCase();
+    const afterSearch = q
+      ? results.filter(
+          (r) =>
+            r.ticker.toLowerCase().includes(q) ||
+            r.name.toLowerCase().includes(q) ||
+            r.sector.toLowerCase().includes(q),
+        )
+      : results;
+    const counts: Record<SetupTag | "ALL", number> = {
+      ALL: afterSearch.length,
+      PULLBACK: 0,
+      BASE_BREAKOUT: 0,
+      SQUEEZE: 0,
+      OVERSOLD_BOUNCE: 0,
+      NONE: 0,
+    };
+    for (const r of afterSearch) {
+      counts[r.gateSummary.setup] = (counts[r.gateSummary.setup] ?? 0) + 1;
+    }
+    return counts;
+  }, [data, search]);
+
   async function copyTickers() {
     const list = filteredResults.map((r) => r.ticker).join("\n");
     try {
@@ -331,20 +358,40 @@ export default function ScannerClient() {
 
         {/* Setup filter chips */}
         <div className="flex flex-wrap gap-2 border-b border-zinc-100 px-4 py-3">
-          {SETUP_CHIPS.map((chip) => (
-            <button
-              key={chip}
-              onClick={() => setSetupFilter(chip)}
-              className={clsx(
-                "rounded-full py-2 px-3 text-xs font-semibold transition-colors",
-                setupFilter === chip
-                  ? "bg-emerald-900 text-white"
-                  : "border border-zinc-200 bg-white text-zinc-700 hover:bg-zinc-50",
-              )}
-            >
-              {SETUP_LABELS[chip]}
-            </button>
-          ))}
+          {SETUP_CHIPS.map((chip) => {
+            const count = setupCounts[chip] ?? 0;
+            const active = setupFilter === chip;
+            const empty = count === 0 && chip !== "ALL";
+            return (
+              <button
+                key={chip}
+                onClick={() => setSetupFilter(chip)}
+                disabled={empty}
+                className={clsx(
+                  "inline-flex items-center gap-1.5 rounded-full py-2 px-3 text-xs font-semibold transition-colors",
+                  active
+                    ? "bg-emerald-900 text-white"
+                    : empty
+                      ? "border border-zinc-200 bg-white text-zinc-400 cursor-not-allowed"
+                      : "border border-zinc-200 bg-white text-zinc-700 hover:bg-zinc-50",
+                )}
+              >
+                <span>{SETUP_LABELS[chip]}</span>
+                <span
+                  className={clsx(
+                    "tabular-nums",
+                    active
+                      ? "text-emerald-200"
+                      : empty
+                        ? "text-zinc-300"
+                        : "text-zinc-400",
+                  )}
+                >
+                  {count}
+                </span>
+              </button>
+            );
+          })}
         </div>
 
         {error && (
