@@ -1,7 +1,6 @@
 import type { Metadata, Viewport } from "next";
 import { Fraunces, JetBrains_Mono, Sora } from "next/font/google";
 import { NavLink } from "@/components/NavLink";
-import { UserStatus } from "@/components/UserStatus";
 import { BottomNav } from "@/components/BottomNav";
 import "./globals.css";
 
@@ -92,10 +91,9 @@ export default function RootLayout({
               <nav className="hidden items-center gap-6 text-sm font-medium text-zinc-600 md:flex">
                 <NavLink href="/scanner">Scanner</NavLink>
                 <NavLink href="/watchlist">Watchlist</NavLink>
+                <NavLink href="/digest">Digest</NavLink>
                 <NavLink href="/settings">Settings</NavLink>
-                <NavLink href="/login">Login</NavLink>
               </nav>
-              <UserStatus />
             </div>
           </header>
 

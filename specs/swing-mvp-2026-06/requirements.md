@@ -293,6 +293,54 @@ After the MVP shipped on 2026-05-18, the user requested a daily Slack digest of 
 - Server-rendered chart PNG to replace quickchart.io
 - Backtest of "did the digest's top 5 outperform"
 
+## 10.6 v2.0 amendments — redefine + add (2026-05-19)
+
+After v1.x stabilized, the user surveyed the surface and reported "beside scanner I find little value in other features." Two streams of work follow.
+
+### Redefine
+
+- **R.1** *(Done)* — `/login` route removed. Demo-auth backend was a stub, server-side redirect to `/login` from `/` already replaced by `/scanner` (GSD review L8 + v1.11). Eliminates `app/login/page.tsx`, `lib/demo-auth.ts`, `components/UserStatus.tsx`.
+
+### Feature E — Daily digest archive with forward-return tracking
+
+**Goal:** answer the question "is the engine actually any good?" by persisting every daily digest and computing 1/3/7/30-day forward returns alongside each archived pick.
+
+- **E.1** *(Event-driven)* When the daily cron completes, the system shall persist the digest output as a single record keyed by date (`YYYY-MM-DD`). The record contains the 5 picks with their ticker, decision, setup, plan, sustainedHighVol flag, sector, and the closing price at the moment the cron ran.
+- **E.2** *(Ubiquitous)* The system shall provide a `/digest` page that shows the last 14 days of archived digests, newest first, with per-pick forward-return computed at read time using current quote data.
+- **E.3** *(Ubiquitous)* Forward returns shall be computed for each pick at 1-day, 3-day, 7-day, and 30-day horizons. Each return is `(currentClose / pickClose) - 1`. Returns for horizons that haven't elapsed yet shall display as `—`.
+- **E.4** *(Ubiquitous)* The page shall display per-day aggregate stats: average forward return at each horizon, hit rate (fraction of picks positive at that horizon), best/worst pick.
+- **E.5** *(Unwanted)* When the persistence backend is unavailable, `/digest` shall display an "archive temporarily unavailable" message and the cron shall still send the Slack message. Persistence failure must never block a digest delivery.
+
+### Feature F — One-tap Watch button on scanner rows
+
+**Goal:** remove the YAML-editing friction killing watchlist engagement. Adding a ticker should be one tap from the scanner.
+
+- **F.1** *(Ubiquitous)* Every row in the scanner UI (both the desktop table and the mobile card) shall include a "👁 Watch" button.
+- **F.2** *(Event-driven)* When the user clicks "Watch" on a ticker not currently in the quick-watch store, the system shall append a record to a quick-watch store containing: ticker, ticker_name, sector, added_at (ISO timestamp), engine_setup_at_add, engine_decision_at_add.
+- **F.3** *(Event-driven)* When the user clicks "Watch" on a ticker already present, the system shall remove that record.
+- **F.4** *(Ubiquitous)* The button shall visually indicate "already watched" state via a filled icon.
+- **F.5** *(Ubiquitous)* The `/watchlist` page shall merge the YAML-defined entries (theses) with quick-watch entries (light watches). Quick-watch entries are displayed in a separate section labeled "Quick watch."
+- **F.6** *(Ubiquitous)* Quick-watch entries are READ AND WRITE from a different store than the committed `data/watchlist.yaml` (which remains read-only at runtime).
+
+### Persistence choice (E + F)
+
+Both features need a small server-side keyed store: ~30KB/day for digest archives × 365 days = ~11MB after a year; quick-watch store is small (10s-100s of entries). Options:
+
+| Option | Setup | Pros | Cons |
+|---|---|---|---|
+| Vercel KV (Upstash Redis under the hood) | One Vercel CLI step | Native SDK, hobby tier (30k cmd/mo, 256MB) | Tied to Vercel |
+| GitHub API commit-back | Octokit npm + GITHUB_TOKEN env | No external service; data lives in repo | Adds noisy commits to history |
+| Upstash Redis (direct) | Same as Vercel KV minus the Vercel wrapper | Portable | Slightly more env config |
+| Vercel Blob | Built-in SDK | Object storage style | Requires paid plan for >500MB; overkill for JSON |
+
+Decision deferred to user (see prompt). Recommended: **Vercel KV** — simplest setup, hobby-tier free, native.
+
+### Out of scope (v2.0)
+
+- Position tracker / P&L (brokerage integration or manual entry; user trades elsewhere)
+- Backtesting harness (needs historical OHLC at scale)
+- Real-time intraday alerts (wrong cadence for a swing tool)
+
 ## 11. Next steps
 
 1. User reviews v1.1 (this doc) and flags anything wrong.
