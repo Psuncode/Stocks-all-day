@@ -9,7 +9,7 @@
  * 5-day delta because it moves on FOMC cadence (rarely day-to-day).
  */
 
-import type { MacroSnapshot } from "@/lib/data/fred";
+import { getMacroSnapshot } from "@/lib/data/fred";
 
 type Tone = "up" | "down" | "flat";
 
@@ -45,6 +45,7 @@ function Cell({
   upIsBad = false,
   digits = 2,
   suffix = "",
+  tooltip,
 }: {
   label: string;
   value: string;
@@ -52,11 +53,12 @@ function Cell({
   upIsBad?: boolean;
   digits?: number;
   suffix?: string;
+  tooltip?: string;
 }) {
   const showDelta = delta !== undefined;
   const tone = showDelta ? toneFor(delta ?? null) : "flat";
   return (
-    <div className="flex items-baseline gap-2">
+    <div className="flex items-baseline gap-2" title={tooltip}>
       <span className="text-[10px] uppercase tracking-[0.18em] text-zinc-500">
         {label}
       </span>
@@ -81,7 +83,8 @@ function Cell({
   );
 }
 
-export function MacroStrip({ snapshot }: { snapshot: MacroSnapshot }) {
+export async function MacroStrip() {
+  const snapshot = await getMacroSnapshot();
   if (!snapshot) return null;
 
   return (
@@ -94,6 +97,7 @@ export function MacroStrip({ snapshot }: { snapshot: MacroSnapshot }) {
               value={snapshot.vix.value.toFixed(2)}
               delta={snapshot.vix.change5d}
               upIsBad
+              tooltip="Rising VIX = elevated fear; engine treats this as risk-off context"
             />
             <Cell
               label="10Y"
@@ -101,6 +105,7 @@ export function MacroStrip({ snapshot }: { snapshot: MacroSnapshot }) {
               suffix="%"
               delta={snapshot.yield10y.change5d}
               upIsBad
+              tooltip="Rising 10Y yields = tighter financial conditions"
             />
             <Cell
               label="Fed Funds"

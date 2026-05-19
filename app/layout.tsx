@@ -1,9 +1,9 @@
 import type { Metadata, Viewport } from "next";
 import { Fraunces, JetBrains_Mono, Sora } from "next/font/google";
+import { Suspense } from "react";
 import { NavLink } from "@/components/NavLink";
 import { BottomNav } from "@/components/BottomNav";
 import { MacroStrip } from "@/components/MacroStrip";
-import { getMacroSnapshot } from "@/lib/data/fred";
 import "./globals.css";
 
 const sora = Sora({
@@ -76,12 +76,11 @@ function Wordmark() {
   );
 }
 
-export default async function RootLayout({
+export default function RootLayout({
   children,
 }: Readonly<{
   children: React.ReactNode;
 }>) {
-  const macroSnapshot = await getMacroSnapshot();
   return (
     <html lang="en">
       <body
@@ -117,7 +116,9 @@ export default async function RootLayout({
           </div>
 
           {/* Macro regime context (desktop only, hidden when FRED_API_KEY is unset). */}
-          <MacroStrip snapshot={macroSnapshot} />
+          <Suspense fallback={null}>
+            <MacroStrip />
+          </Suspense>
 
           {/* Bottom padding on mobile so the fixed BottomNav doesn't cover page content. */}
           <div className="pb-20 md:pb-0">{children}</div>
