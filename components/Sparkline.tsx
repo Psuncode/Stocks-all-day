@@ -23,8 +23,8 @@ export type SparklineProps = {
 
 export function Sparkline({
   closes,
-  width = 50,
-  height = 20,
+  width = 72,
+  height = 24,
   direction = "auto",
 }: SparklineProps) {
   if (!closes || closes.length < 2) {

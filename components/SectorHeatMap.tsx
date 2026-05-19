@@ -72,10 +72,10 @@ export function SectorHeatMap({ sectorPerformance }: SectorHeatMapProps) {
           return (
             <div
               key={s.sector}
-              className={`rounded-2xl border px-3 py-2 ${shade.bg} ${shade.text}`}
+              className={`rounded-2xl border px-3 py-2 min-h-[3.25rem] flex flex-col justify-between ${shade.bg} ${shade.text}`}
               title={`${s.sector} · ${pct}% · ${s.tickerCount} tickers`}
             >
-              <div className="truncate text-xs font-semibold">{s.sector}</div>
+              <div className="text-xs font-semibold leading-tight break-words" title={s.sector}>{s.sector}</div>
               <div className="mt-1 flex items-baseline justify-between gap-2">
                 <div className="text-sm font-bold tabular-nums">
                   <span aria-hidden="true">{shade.arrow}</span> {pct}%
