@@ -91,11 +91,17 @@ export function deriveMetrics(symbol: UniverseSymbol, spy: Candle[]): DerivedMet
   const spySlope20 = slope(spyCloses.slice(-20));
   const spyChop = Math.abs(spySlope20) < 0.15 && spyAtrPct > 0.9;
 
-  const n = 60;
-  const sym60 = closes.slice(-n);
-  const spy60 = spyCloses.slice(-n);
-  const ratios = sym60.map((c, i) => c / (spy60[i] || spy60[spy60.length - 1]!));
-  const rs60 = slope(ratios) * 10_000; // scaled for readability
+  // GSD review H1: rs60 must align symbol tail to the SAME trailing
+  // window of SPY. Newly-listed names have fewer than 60 candles; the
+  // previous code paired their day-0 close with SPY 60 days ago, which
+  // produced junk RS values. Align by tail length instead.
+  const symCloses = closes.slice(-60);
+  const spyTail = spyCloses.slice(-symCloses.length);
+  const denomFallback = spyTail[spyTail.length - 1] ?? 1;
+  const ratios = symCloses.map(
+    (c, i) => c / (spyTail[i] || denomFallback),
+  );
+  const rs60 = ratios.length >= 2 ? slope(ratios) * 10_000 : 0;
 
   // v1.4 / v1.8 — "3W momentum": HIGH VOLUME + high volatility + tracking
   // the 15-day average + meaningful direction. Surfaces names you can
@@ -140,12 +146,44 @@ export function deriveMetrics(symbol: UniverseSymbol, spy: Candle[]): DerivedMet
   };
 }
 
+/**
+ * GSD review C1: precompute average rs60 per sector once per scan.
+ * The old code re-ran deriveMetrics for every same-sector peer inside the
+ * per-symbol EVENT gate, producing O(N × avg_sector_size) deriveMetrics
+ * calls per scan. With 600 names × ~60 peers per sector that was ~36,000
+ * redundant evaluations and the dominant reason the cron flirted with the
+ * 60s function-duration cap.
+ */
+export function buildSectorRsMap(
+  universe: UniverseSymbol[],
+  spy: Candle[],
+): Map<string, number> {
+  const totals = new Map<string, { sum: number; count: number }>();
+  for (const u of universe) {
+    const sector = u.meta.sector;
+    const m = deriveMetrics(u, spy);
+    const cur = totals.get(sector);
+    if (cur) {
+      cur.sum += m.rs60;
+      cur.count += 1;
+    } else {
+      totals.set(sector, { sum: m.rs60, count: 1 });
+    }
+  }
+  const out = new Map<string, number>();
+  for (const [sector, { sum, count }] of totals) {
+    out.set(sector, sum / Math.max(1, count));
+  }
+  return out;
+}
+
 export function evaluateSymbol(
   symbol: UniverseSymbol,
   universe: UniverseSymbol[],
   cfg: Pick<ScanConfig, "allowEarningsTrades">,
   asOf: string,
   spy: Candle[],
+  sectorRsByName?: Map<string, number>,
 ): DecisionResult {
   const m = deriveMetrics(symbol, spy);
 
@@ -400,10 +438,20 @@ export function evaluateSymbol(
   });
 
   // Sector momentum proxy: average RS of symbols in same sector.
-  const sectorSyms = universe.filter((u) => u.meta.sector === symbol.meta.sector);
-  const sectorRs =
-    sectorSyms.reduce((sum, s) => sum + deriveMetrics(s, spy).rs60, 0) /
-    Math.max(1, sectorSyms.length);
+  // Use the precomputed map when runScan provided one (fast path); otherwise
+  // fall back to the live computation for one-off evaluateSymbol callers
+  // (e.g. /api/symbol/[ticker] and /symbol/[ticker]/page.tsx).
+  let sectorRs: number;
+  if (sectorRsByName) {
+    sectorRs = sectorRsByName.get(symbol.meta.sector) ?? 0;
+  } else {
+    const sectorSyms = universe.filter(
+      (u) => u.meta.sector === symbol.meta.sector,
+    );
+    sectorRs =
+      sectorSyms.reduce((sum, s) => sum + deriveMetrics(s, spy).rs60, 0) /
+      Math.max(1, sectorSyms.length);
+  }
   const sectorWeak = sectorRs < -0.75;
   eventChecks.push({
     id: "sector_momentum",

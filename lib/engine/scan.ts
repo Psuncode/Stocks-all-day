@@ -1,11 +1,15 @@
 import type { Candle, Decision, DecisionResult, ScanConfig, UniverseSymbol } from "@/lib/types";
-import { evaluateSymbol, todayYmd } from "@/lib/engine/evaluate";
+import { buildSectorRsMap, evaluateSymbol, todayYmd } from "@/lib/engine/evaluate";
 
 export function runScan(universe: UniverseSymbol[], cfg: ScanConfig, spy: Candle[]): DecisionResult[] {
   const asOf = todayYmd();
   const allowEarningsTrades = cfg.allowEarningsTrades;
 
-  const evaluated = universe.map((s) => evaluateSymbol(s, universe, { allowEarningsTrades }, asOf, spy));
+  // GSD review C1: precompute sector-RS once per scan instead of N × peers per symbol.
+  const sectorRsByName = buildSectorRsMap(universe, spy);
+  const evaluated = universe.map((s) =>
+    evaluateSymbol(s, universe, { allowEarningsTrades }, asOf, spy, sectorRsByName),
+  );
 
   const loaded = cfg.includeBlocked
     ? evaluated

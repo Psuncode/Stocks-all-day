@@ -11,6 +11,27 @@ export const dynamic = "force-dynamic";
 
 const MS_PER_DAY = 24 * 60 * 60 * 1000;
 
+// GSD review H3: cap the per-symbol fan-out so a 50-ticker watchlist
+// doesn't try to make 50 simultaneous Yahoo calls on cold cache.
+async function pMapLimit<T, R>(
+  items: T[],
+  limit: number,
+  fn: (item: T) => Promise<R>,
+): Promise<R[]> {
+  const result: R[] = new Array(items.length);
+  let cursor = 0;
+  async function worker() {
+    while (cursor < items.length) {
+      const idx = cursor++;
+      result[idx] = await fn(items[idx]!);
+    }
+  }
+  await Promise.all(
+    Array.from({ length: Math.min(limit, items.length) }, worker),
+  );
+  return result;
+}
+
 function priceProgress(
   entry: number,
   exit: number,
@@ -45,8 +66,10 @@ export default async function WatchlistPage() {
   const { watchlist, errors } = await loadWatchlist();
   const today = new Date();
 
-  const enriched: EnrichedEntry[] = await Promise.all(
-    watchlist.tickers.map(async (entry) => {
+  const enriched: EnrichedEntry[] = await pMapLimit(
+    watchlist.tickers,
+    5,
+    async (entry) => {
       let symbol = null;
       try {
         symbol = await getCachedSymbol(entry.ticker);
@@ -102,7 +125,7 @@ export default async function WatchlistPage() {
         fires,
         ruleEvaluations,
       };
-    }),
+    },
   );
 
   return (

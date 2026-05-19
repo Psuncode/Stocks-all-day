@@ -110,6 +110,15 @@ async function pickBlocks(
   if (picks.length === 0) return [];
   const nowEpoch = Math.floor(Date.now() / 1000);
 
+  // GSD review H6: chart shortlink POSTs to quickchart.io run in parallel
+  // instead of awaiting one at a time inside the block-build loop.
+  // Saves ~2.5s on a 5-pick digest.
+  const chartUrls = await Promise.all(
+    picks.map((pick) =>
+      chartShortUrl(pick.result.ticker, pick.candles, pick.result.plan),
+    ),
+  );
+
   const blocks: SlackBlock[] = [
     {
       type: "header",
@@ -170,7 +179,7 @@ async function pickBlocks(
       },
     });
 
-    const chart = await chartShortUrl(r.ticker, pick.candles, r.plan);
+    const chart = chartUrls[i];
     if (chart) {
       blocks.push({
         type: "image",

@@ -40,6 +40,28 @@ const FALLBACK_TICKERS = [
 // Fetch one predefined screener
 // ---------------------------------------------------------------------------
 
+/**
+ * Yahoo's `earningsTimestamp` from the screener (with validateResult: false)
+ * arrives as a NUMBER in seconds since epoch. The previous mapping
+ *   new Date(seconds).getTime() / 1000
+ * misinterprets that number as ms, landing every earnings date in 1970 and
+ * silently breaking the EVENT gate for screener-discovered tickers.
+ * GSD review H2.
+ */
+// eslint-disable-next-line @typescript-eslint/no-explicit-any
+function toEpochSeconds(raw: any): number | null {
+  if (raw == null || raw === "") return null;
+  if (typeof raw === "number") {
+    if (!Number.isFinite(raw)) return null;
+    // Heuristic: anything > 10^11 is almost certainly ms; otherwise seconds.
+    return Math.floor(raw > 1e11 ? raw / 1000 : raw);
+  }
+  if (raw instanceof Date) return Math.floor(raw.getTime() / 1000);
+  const parsed = new Date(raw).getTime();
+  if (!Number.isFinite(parsed)) return null;
+  return Math.floor(parsed / 1000);
+}
+
 // eslint-disable-next-line @typescript-eslint/no-explicit-any
 function mapQuote(raw: any): ScreenerQuote {
   return {
@@ -49,9 +71,7 @@ function mapQuote(raw: any): ScreenerQuote {
     bid: raw.bid ?? 0,
     ask: raw.ask ?? 0,
     avgVolume3m: raw.averageDailyVolume3Month ?? 0,
-    earningsTimestamp: raw.earningsTimestamp
-      ? Math.floor(new Date(raw.earningsTimestamp).getTime() / 1000)
-      : null,
+    earningsTimestamp: toEpochSeconds(raw.earningsTimestamp),
   };
 }
 

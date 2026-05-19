@@ -40,14 +40,24 @@ type CheckResponse = {
 export async function POST(req: Request): Promise<Response> {
   const secret = process.env.CRON_SECRET;
   const auth = req.headers.get("authorization");
+  const isProd =
+    process.env.NODE_ENV === "production" ||
+    process.env.VERCEL_ENV === "production";
 
   if (secret && secret.length > 0) {
     if (auth !== `Bearer ${secret}`) {
       return new Response("Unauthorized", { status: 401 });
     }
+  } else if (isProd) {
+    // GSD review C2: missing CRON_SECRET in production must NOT silently
+    // open the endpoint to anonymous callers. Fail closed.
+    console.error(
+      "[check-invalidations] CRON_SECRET unset in production — refusing request",
+    );
+    return new Response("Misconfigured: CRON_SECRET unset", { status: 500 });
   } else {
     console.warn(
-      "[check-invalidations] CRON_SECRET unset — allowing request (dev mode only). Set CRON_SECRET in production.",
+      "[check-invalidations] CRON_SECRET unset — allowing request (dev only).",
     );
   }
 
