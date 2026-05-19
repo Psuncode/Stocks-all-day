@@ -1,6 +1,7 @@
 import { loadWatchlist, type LoadError } from "@/lib/thesis/load";
 import { evaluateRule } from "@/lib/thesis/evaluate-rules";
 import { getProvider } from "@/lib/data/provider";
+import { fetchCompanyNews } from "@/lib/data/finnhub";
 import {
   sendSlackDigest,
   type FireRecord,
@@ -74,6 +75,9 @@ export async function POST(req: Request): Promise<Response> {
   const provider = getProvider();
   const fires: FireRecord[] = [];
   let skipped = 0;
+  const newsSinceDate = new Date(Date.now() - 24 * 60 * 60 * 1000)
+    .toISOString()
+    .slice(0, 10);
 
   for (const entry of active) {
     let symbol;
@@ -94,8 +98,17 @@ export async function POST(req: Request): Promise<Response> {
       continue;
     }
 
+    const needsNews = entry.invalidation_rules.some(
+      (r) => r.signal === "news_match",
+    );
+    const newsHeadlines: string[] | undefined = needsNews
+      ? (await fetchCompanyNews(entry.ticker, newsSinceDate)).map(
+          (n) => n.headline,
+        )
+      : undefined;
+
     for (const rule of entry.invalidation_rules) {
-      const evaluation = evaluateRule(rule, symbol.candles);
+      const evaluation = evaluateRule(rule, symbol.candles, newsHeadlines);
       if (evaluation.fired && !evaluation.suppressed) {
         const fire: FireRecord = {
           ticker: entry.ticker,

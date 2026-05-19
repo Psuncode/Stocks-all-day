@@ -3,6 +3,7 @@ import { loadWatchlist } from "@/lib/thesis/load";
 import { evaluateRule } from "@/lib/thesis/evaluate-rules";
 import { daysUntil, horizonState } from "@/lib/thesis/horizon";
 import { getCachedSymbol } from "@/lib/data/cached-provider";
+import { fetchCompanyNews } from "@/lib/data/finnhub";
 import WatchlistView from "@/app/watchlist/watchlist-client";
 import type { EnrichedEntry, FireRecord } from "@/app/watchlist/_thesis-card";
 import { listQuickWatch, type QuickWatchEntry } from "@/lib/watch/quick-watch";
@@ -53,6 +54,9 @@ function priceProgress(
 export default async function WatchlistPage() {
   const { watchlist, errors } = await loadWatchlist();
   const today = new Date();
+  const newsSinceDate = new Date(today.getTime() - 24 * 60 * 60 * 1000)
+    .toISOString()
+    .slice(0, 10);
 
   const enriched: EnrichedEntry[] = await pMapLimit(
     watchlist.tickers,
@@ -67,8 +71,20 @@ export default async function WatchlistPage() {
 
       const lastPrice = symbol?.quote.last ?? null;
 
+      const needsNews = entry.invalidation_rules.some(
+        (r) => r.signal === "news_match",
+      );
+      const newsHeadlines: string[] | undefined =
+        needsNews && symbol
+          ? (await fetchCompanyNews(entry.ticker, newsSinceDate)).map(
+              (n) => n.headline,
+            )
+          : undefined;
+
       const ruleEvaluations = entry.invalidation_rules.map((rule) => {
-        const ev = symbol ? evaluateRule(rule, symbol.candles) : null;
+        const ev = symbol
+          ? evaluateRule(rule, symbol.candles, newsHeadlines)
+          : null;
         return {
           ruleId: rule.id,
           description: rule.description ?? rule.id,
