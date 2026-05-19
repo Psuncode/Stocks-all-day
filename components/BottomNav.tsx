@@ -84,16 +84,29 @@ export function BottomNav() {
               <Link
                 href={tab.href}
                 className={clsx(
-                  "flex h-14 flex-col items-center justify-center gap-0.5 transition-colors",
+                  "relative flex h-14 flex-col items-center justify-center gap-0.5 transition-colors",
                   active ? "text-emerald-800" : "text-zinc-500",
                 )}
                 aria-current={active ? "page" : undefined}
               >
+                {/* GSD UI review pass 2 H2: non-color active indicator
+                    (top bar) so colorblind users + grayscale displays can
+                    tell which tab is selected. */}
+                {active ? (
+                  <span
+                    aria-hidden="true"
+                    className="absolute inset-x-6 top-0 h-0.5 rounded-full bg-emerald-700"
+                  />
+                ) : null}
                 {tab.icon(active)}
                 <span
                   className={clsx(
-                    "text-[10px] font-semibold tracking-wide",
-                    active ? "text-emerald-900" : "text-zinc-600",
+                    // H1: bumped from 10px → 11px to reach the ergonomic
+                    // floor for nav labels.
+                    "text-[11px] tracking-wide",
+                    active
+                      ? "font-bold text-emerald-900"
+                      : "font-semibold text-zinc-600",
                   )}
                 >
                   {tab.label}

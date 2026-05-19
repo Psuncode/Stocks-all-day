@@ -343,7 +343,10 @@ export default function ScannerClient() {
 
   return (
     <div className="grid grid-cols-1 gap-6 lg:grid-cols-[280px_1fr]">
-      <section className="rounded-[28px] border border-white/70 bg-white/80 p-5 shadow-sm">
+      {/* On mobile, results come first so the user lands on data (not on a
+          280px filter panel pushing the results below the fold).
+          GSD UI review pass 2 C3. */}
+      <section className="order-2 rounded-[28px] border border-white/70 bg-white/80 p-5 shadow-sm lg:order-1">
         <div className="text-xs uppercase tracking-[0.24em] text-zinc-500">Filters</div>
         <div className="mt-3 space-y-3 text-sm">
           <label className="flex items-center justify-between gap-3">
@@ -411,7 +414,7 @@ export default function ScannerClient() {
         </div>
       </section>
 
-      <section className="rounded-[28px] border border-white/70 bg-white/80 shadow-sm">
+      <section className="order-1 rounded-[28px] border border-white/70 bg-white/80 shadow-sm lg:order-2">
         <div className="flex items-center justify-between gap-3 border-b border-white/70 px-4 py-3">
           <div className="min-w-0">
             <div className="text-sm font-semibold text-zinc-900">Scanner</div>

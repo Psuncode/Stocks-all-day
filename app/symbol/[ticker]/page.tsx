@@ -8,7 +8,11 @@ import {
   getCachedUniverse,
   getCachedSpy,
 } from "@/lib/data/cached-provider";
-import { evaluateSymbol, todayYmd } from "@/lib/engine/evaluate";
+import {
+  buildSectorRsMap,
+  evaluateSymbol,
+  todayYmd,
+} from "@/lib/engine/evaluate";
 import { loadWatchlist } from "@/lib/thesis/load";
 import { daysUntil, horizonState } from "@/lib/thesis/horizon";
 import type { HorizonState } from "@/lib/thesis/horizon";
@@ -105,12 +109,16 @@ export default async function SymbolPage({
     );
   }
 
+  // GSD review pass 2 H3.5: precompute sector RS once so this page load
+  // doesn't repeat O(N × peers) deriveMetrics during the EVENT gate.
+  const sectorRsByName = buildSectorRsMap(universe, spy);
   const result = evaluateSymbol(
     symbol,
     universe,
     { allowEarningsTrades: allowEarnings },
     todayYmd(),
     spy,
+    sectorRsByName,
   );
 
   const watchEntry: TickerEntry | undefined =
@@ -157,16 +165,22 @@ export default async function SymbolPage({
 
   return (
     <main className="mx-auto max-w-7xl px-4 pb-16 pt-8">
-      {/* Hero header — single line, ticker / price / decision */}
-      <div className="flex flex-wrap items-end justify-between gap-4">
+      {/* Hero header. GSD UI review pass 2 H4: at 375px the previous
+          flex-wrap put decision badge + reason alongside a 4xl ticker
+          and wrapped to 4 lines. Now: ticker block stays compact on
+          mobile (3xl, name truncates), decision sits BELOW the ticker
+          block on phone and beside on lg+. */}
+      <div className="flex flex-col gap-4 md:flex-row md:flex-wrap md:items-end md:justify-between">
         <div className="min-w-0">
           <div className="flex flex-wrap items-baseline gap-3">
-            <h1 className="font-[family:var(--font-display)] text-4xl text-zinc-900">
+            <h1 className="font-[family:var(--font-display)] text-3xl text-zinc-900 md:text-4xl">
               {result.ticker}
             </h1>
-            <span className="text-lg text-zinc-500">{result.name}</span>
+            <span className="truncate text-base text-zinc-500 md:text-lg">
+              {result.name}
+            </span>
           </div>
-          <div className="mt-1 flex flex-wrap items-baseline gap-3 text-sm text-zinc-600">
+          <div className="mt-1 flex flex-wrap items-baseline gap-x-3 gap-y-1 text-sm text-zinc-600">
             <span>{result.sector}</span>
             <span className="tabular-nums">
               {usd.format(result.metrics.price)}
@@ -178,9 +192,11 @@ export default async function SymbolPage({
             </span>
           </div>
         </div>
-        <div className="flex items-center gap-3">
+        <div className="flex flex-wrap items-center gap-2 md:gap-3">
           <Badge tone={decisionTone(result.decision)}>{result.decision}</Badge>
-          <span className="text-sm text-zinc-600">{result.reason}</span>
+          <span className="text-sm text-zinc-600 md:max-w-md">
+            {result.reason}
+          </span>
         </div>
       </div>
 

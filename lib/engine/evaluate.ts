@@ -100,16 +100,20 @@ export function deriveMetrics(symbol: UniverseSymbol, spy: Candle[]): DerivedMet
   const spySlope20 = slope(spyCloses.slice(-20));
   const spyChop = Math.abs(spySlope20) < 0.15 && spyAtrPct > 0.9;
 
-  // GSD review H1: rs60 must align symbol tail to the SAME trailing
-  // window of SPY. Newly-listed names have fewer than 60 candles; the
-  // previous code paired their day-0 close with SPY 60 days ago, which
-  // produced junk RS values. Align by tail length instead.
-  const symCloses = closes.slice(-60);
-  const spyTail = spyCloses.slice(-symCloses.length);
-  const denomFallback = spyTail[spyTail.length - 1] ?? 1;
-  const ratios = symCloses.map(
-    (c, i) => c / (spyTail[i] || denomFallback),
-  );
+  // GSD review H1 (pass 1) + CR-01 (pass 2): take the MIN of both tail
+  // lengths so neither symbol-shorter-than-SPY nor SPY-shorter-than-symbol
+  // produces misaligned pairs. The fallback divisor was also wrong — if
+  // SPY is missing data, return rs60=0 instead of padding with the most
+  // recent close (which produced ratios anchored to today).
+  const len = Math.min(closes.length, spyCloses.length, 60);
+  const symCloses = closes.slice(-len);
+  const spyTail = spyCloses.slice(-len);
+  const ratios: number[] = [];
+  for (let i = 0; i < len; i++) {
+    const spyClose = spyTail[i];
+    if (!spyClose || spyClose <= 0) continue;
+    ratios.push(symCloses[i]! / spyClose);
+  }
   const rs60 = ratios.length >= 2 ? slope(ratios) * 10_000 : 0;
 
   // v1.4 / v1.8 — "3W momentum": HIGH VOLUME + high volatility + tracking

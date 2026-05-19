@@ -1,5 +1,9 @@
 import { getProvider } from "@/lib/data/provider";
-import { evaluateSymbol, todayYmd } from "@/lib/engine/evaluate";
+import {
+  buildSectorRsMap,
+  evaluateSymbol,
+  todayYmd,
+} from "@/lib/engine/evaluate";
 import { fetchSpyCandles } from "@/lib/data/yahoo";
 import type { DecisionResult, UniverseSymbol } from "@/lib/types";
 
@@ -45,6 +49,9 @@ export async function POST(req: Request) {
   for (const u of universe) found.set(u.meta.ticker.toUpperCase(), u);
 
   const asOf = todayYmd();
+  // GSD review pass 2 H2.5: single buildSectorRsMap per request instead of
+  // O(N × peers) inside each evaluateSymbol call.
+  const sectorRsByName = buildSectorRsMap(universe, spy);
   const results: DecisionResult[] = [];
   const notFound: string[] = [];
 
@@ -57,7 +64,16 @@ export async function POST(req: Request) {
         continue;
       }
     }
-    results.push(evaluateSymbol(symbol, universe, { allowEarningsTrades: allowEarnings }, asOf, spy));
+    results.push(
+      evaluateSymbol(
+        symbol,
+        universe,
+        { allowEarningsTrades: allowEarnings },
+        asOf,
+        spy,
+        sectorRsByName,
+      ),
+    );
   }
 
   return Response.json({

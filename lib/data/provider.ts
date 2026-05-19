@@ -31,25 +31,15 @@ export function getProvider(): DataProvider {
       }
 
       // Pre-filter to candidates
-      let candidates = preFilter(screenerQuotes);
+      const candidates = preFilter(screenerQuotes);
 
-      // Fallback if screener returned nothing usable. GSD review M6:
-      // use an explicit boolean rather than the previous price===0 sentinel
-      // (a real Yahoo quote could legitimately return price 0 for a
-      // delisted/halted name).
-      let usingFallback = false;
-      if (candidates.length === 0) {
+      // Fallback if screener returned nothing usable. fetchFallbackUniverse
+      // reads FALLBACK_TICKERS internally; we don't need to construct
+      // synthetic ScreenerQuote stubs anymore (GSD review pass 2 H1.5:
+      // those stubs were never read).
+      const usingFallback = candidates.length === 0;
+      if (usingFallback) {
         console.warn("[provider] No screener candidates, using fallback tickers");
-        usingFallback = true;
-        candidates = FALLBACK_TICKERS.map((t) => ({
-          ticker: t,
-          name: t,
-          price: 0,
-          bid: 0,
-          ask: 0,
-          avgVolume3m: 0,
-          earningsTimestamp: null,
-        }));
       }
 
       // Phase 2: Detail fetch for qualifying stocks
