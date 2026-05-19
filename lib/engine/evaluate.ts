@@ -97,14 +97,27 @@ export function deriveMetrics(symbol: UniverseSymbol, spy: Candle[]): DerivedMet
   const ratios = sym60.map((c, i) => c / (spy60[i] || spy60[spy60.length - 1]!));
   const rs60 = slope(ratios) * 10_000; // scaled for readability
 
-  // v1.4 — "3W momentum": volatile names tracking their 15-day average.
-  // Surfaces stocks that have been consistently moving (in either direction)
-  // for ~3 weeks, while filtering out one-day-spike chasers.
+  // v1.4 / v1.8 — "3W momentum": HIGH VOLUME + high volatility + tracking
+  // the 15-day average + meaningful direction. Surfaces names you can
+  // actually fill orders on, that have been consistently moving for ~3
+  // weeks, without one-day spike chasing.
+  const recent5Vols = candles.slice(-5).map((c) => c.v);
+  const prior25Vols = candles
+    .slice(Math.max(0, candles.length - 30), candles.length - 5)
+    .map((c) => c.v);
+  const avgVol5 =
+    recent5Vols.reduce((s, v) => s + v, 0) / Math.max(1, recent5Vols.length);
+  const avgVol25 =
+    prior25Vols.reduce((s, v) => s + v, 0) / Math.max(1, prior25Vols.length);
+  const volumeSustained = avgVol25 > 0 ? avgVol5 / avgVol25 >= 0.7 : true;
+
   const sustainedHighVol =
-    atr15Pct >= 3 &&
-    Math.abs(priceToSma15Pct) <= 3 &&
-    Math.abs(slope15PctPerDay) >= 0.3 &&
-    todayMoveAtrMult <= 1.5;
+    advUsd >= 25_000_000 &&             // high dollar volume (v1.8)
+    volumeSustained &&                  // volume isn't collapsing (v1.8)
+    atr15Pct >= 3 &&                    // high volatility (15-session ATR)
+    Math.abs(priceToSma15Pct) <= 3 &&   // hugging the 3-week average
+    Math.abs(slope15PctPerDay) >= 0.3 &&// real trend, not chop
+    todayMoveAtrMult <= 1.5;            // not a freak spike
 
   return {
     price,
