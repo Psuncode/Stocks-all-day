@@ -11,9 +11,7 @@
  */
 
 import {
-  addQuickWatch,
-  listTickerSet,
-  removeQuickWatch,
+  toggleQuickWatch,
   listQuickWatch,
 } from "@/lib/watch/quick-watch";
 import { kvAvailable } from "@/lib/data/kv";
@@ -64,18 +62,7 @@ export async function POST(req: Request): Promise<Response> {
     );
   }
 
-  const currentSet = await listTickerSet();
-  if (currentSet.has(ticker)) {
-    const result = await removeQuickWatch(ticker);
-    return Response.json({
-      ok: result.ok,
-      action: "removed",
-      ticker,
-      reason: result.reason,
-    });
-  }
-
-  const result = await addQuickWatch({
+  const result = await toggleQuickWatch({
     ticker,
     name: body.name ?? ticker,
     sector: body.sector ?? "—",
@@ -84,7 +71,7 @@ export async function POST(req: Request): Promise<Response> {
   });
   return Response.json({
     ok: result.ok,
-    action: "added",
+    action: result.action,
     ticker,
     reason: result.reason,
   });

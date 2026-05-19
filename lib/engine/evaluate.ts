@@ -772,9 +772,14 @@ function finalize(
 }
 
 export function todayYmd(): string {
+  // GSD review pass 3 M1: use UTC consistently so todayYmd() and the
+  // UTC-based date math in lib/digest/archive.ts addDays() agree on
+  // "today" regardless of the function's local TZ. The cron route
+  // already runs in UTC on Vercel; this also keeps unit tests
+  // deterministic across timezones.
   const d = new Date();
-  const y = d.getFullYear();
-  const m = String(d.getMonth() + 1).padStart(2, "0");
-  const day = String(d.getDate()).padStart(2, "0");
+  const y = d.getUTCFullYear();
+  const m = String(d.getUTCMonth() + 1).padStart(2, "0");
+  const day = String(d.getUTCDate()).padStart(2, "0");
   return `${y}-${m}-${day}`;
 }

@@ -2,6 +2,7 @@
 
 import { useEffect, useMemo, useState } from "react";
 import Link from "next/link";
+import { useSearchParams } from "next/navigation";
 import clsx from "clsx";
 import { Badge } from "@/components/Badge";
 import { Drawer } from "@/components/Drawer";
@@ -160,7 +161,11 @@ export default function ScannerClient() {
   const [decision, setDecision] = useState<Decision | "ALL">("ALL");
   const [whyBlockedOnly, setWhyBlockedOnly] = useState(false);
   const [maxRows, setMaxRows] = useState(0);
-  const [search, setSearch] = useState("");
+  // GSD review pass 3 M5: honor ?search=<query> so the symbol page can
+  // deep-link into a pre-filtered scanner ("scanner row" link).
+  const searchParams = useSearchParams();
+  const initialSearch = searchParams?.get("search") ?? "";
+  const [search, setSearch] = useState(initialSearch);
   const [setupFilter, setSetupFilter] = useState<SetupTag | "ALL">("ALL");
   const [momentumOnly, setMomentumOnly] = useState(false);
   const [utahOnly, setUtahOnly] = useState(false);

@@ -223,9 +223,6 @@ function QuickWatchCard({
         month: "short",
         day: "numeric",
       });
-  const delta =
-    lastPrice == null ? null : ((lastPrice - 0) / 1) * 0; // placeholder; we don't have add-price
-  void delta;
 
   return (
     <Link

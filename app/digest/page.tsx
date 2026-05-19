@@ -51,17 +51,38 @@ type EnrichedSnapshot = {
   stats: Array<{ horizon: number; avg: number | null; hitRate: number | null }>;
 };
 
+// GSD review pass 3 M3: bound per-snapshot fan-out so a 14-day archive
+// × 5 picks = up to 70 parallel getCachedSymbol calls on cold cache
+// doesn't slam Yahoo. Cache hits are cheap; this only matters for the
+// first /digest visit after a long idle.
+async function pMapLimit<T, R>(
+  items: T[],
+  limit: number,
+  fn: (item: T) => Promise<R>,
+): Promise<R[]> {
+  const result: R[] = new Array(items.length);
+  let cursor = 0;
+  async function worker() {
+    while (cursor < items.length) {
+      const idx = cursor++;
+      result[idx] = await fn(items[idx]!);
+    }
+  }
+  await Promise.all(
+    Array.from({ length: Math.min(limit, items.length) }, worker),
+  );
+  return result;
+}
+
 async function enrichSnapshot(
   snap: ArchivedSnapshot,
 ): Promise<EnrichedSnapshot> {
-  const enriched: EnrichedPick[] = await Promise.all(
-    snap.picks.map(async (pick) => {
-      const sym = await getCachedSymbol(pick.ticker).catch(() => null);
-      const candles = (sym?.candles ?? []).map((c) => ({ t: c.t, c: c.c }));
-      const returns = computeForwardReturns(snap.date, pick.pickClose, candles);
-      return { ...pick, returns };
-    }),
-  );
+  const enriched: EnrichedPick[] = await pMapLimit(snap.picks, 5, async (pick) => {
+    const sym = await getCachedSymbol(pick.ticker).catch(() => null);
+    const candles = (sym?.candles ?? []).map((c) => ({ t: c.t, c: c.c }));
+    const returns = computeForwardReturns(snap.date, pick.pickClose, candles);
+    return { ...pick, returns };
+  });
 
   const stats = HORIZONS.map((h) => {
     const vals = enriched
@@ -120,7 +141,9 @@ export default async function DigestArchivePage() {
     );
   }
 
-  const enriched = await Promise.all(snapshots.map(enrichSnapshot));
+  // Bound the cross-snapshot fan-out too. 3 snapshots × 5 workers each
+  // = 15 max concurrent getCachedSymbol calls on cold cache.
+  const enriched = await pMapLimit(snapshots, 3, enrichSnapshot);
 
   // Overall aggregate across all days
   const overall = HORIZONS.map((h) => {

@@ -62,6 +62,17 @@ export async function persistDigest(
   };
 
   try {
+    // GSD review pass 3 H1: warn when overwriting a same-day snapshot
+    // (e.g. manual cron earlier in the day getting clobbered by the
+    // 21:05 UTC scheduled run). For a personal tool last-write-wins is
+    // fine, but the log makes it visible.
+    const prior = await kv.exists(snapshotKey(date));
+    if (prior) {
+      console.warn(
+        `[digest-archive] overwriting existing snapshot for ${date}; ` +
+          `forward returns will anchor to the new pickClose values.`,
+      );
+    }
     await kv.set(snapshotKey(date), archived);
     await kv.sadd(INDEX_KEY, date);
     // Trim: drop snapshots older than KEEP_DAYS.
