@@ -10,7 +10,7 @@
  * never block a pick, just rank it higher.
  */
 
-import { UTAH_TICKERS } from "@/lib/data/screener";
+import { UTAH_TICKERS } from "@/lib/data/static-lists";
 
 const UTAH_SET = new Set(UTAH_TICKERS.map((t) => t.toUpperCase()));
 

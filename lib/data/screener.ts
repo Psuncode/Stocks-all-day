@@ -32,12 +32,7 @@ const SCREENER_IDS = [
   "undervalued_growth_stocks", // value + growth
 ] as const;
 
-/** Safety net if all screeners fail */
-const FALLBACK_TICKERS = [
-  "PLTR", "RBLX", "SOFI", "HOOD", "SNAP", "PINS", "AFRM", "NU",
-  "DKNG", "RIVN", "ROKU", "CLF", "AA", "X", "RIG", "DAL", "UAL",
-  "NCLH", "HIMS", "DUOL",
-];
+// FALLBACK_TICKERS moved to lib/data/static-lists.ts (see bottom of file).
 
 // ---------------------------------------------------------------------------
 // Fetch one predefined screener
@@ -128,31 +123,7 @@ export function preFilter(quotes: ScreenerQuote[]): ScreenerQuote[] {
   return filtered;
 }
 
-// ---------------------------------------------------------------------------
-// Utah always-include tickers
-// ---------------------------------------------------------------------------
-
-export const UTAH_TICKERS = [
-  // Silicon Slopes / Utah tech
-  "DOMO",   // Domo Inc — American Fork
-  "HCAT",   // Health Catalyst — South Jordan
-  "RXRX",   // Recursion Pharmaceuticals — Salt Lake City
-  "WEAV",   // Weave Communications — Lehi
-  "PRPL",   // Purple Innovation — Lehi
-  "COOK",   // Traeger — Salt Lake City
-  "NATR",   // Nature's Sunshine — Lehi
-  // Utah financials / industrials
-  "ZION",   // Zions Bancorporation — Salt Lake City
-  "SKYW",   // SkyWest Inc — St. George
-  "NUS",    // Nu Skin Enterprises — Provo
-  // Additional Utah-based
-  "CLAR",   // Clarus Corp — Salt Lake City
-  "CODX",   // Co-Diagnostics — Salt Lake City
-  "CLNN",   // Clene Nanomedicine — Salt Lake City
-];
-
-// ---------------------------------------------------------------------------
-// Fallback tickers (exported for provider.ts)
-// ---------------------------------------------------------------------------
-
-export { FALLBACK_TICKERS };
+// UTAH_TICKERS + FALLBACK_TICKERS moved to lib/data/static-lists.ts so client
+// code (lib/preferences.ts) can import them without pulling yahoo-finance2
+// into the browser bundle. Re-export here so existing callers keep working.
+export { UTAH_TICKERS, FALLBACK_TICKERS } from "@/lib/data/static-lists";
