@@ -7,8 +7,45 @@ import clsx from "clsx";
 import { Badge } from "@/components/Badge";
 import { Drawer } from "@/components/Drawer";
 import { GateBreakdown } from "@/components/GateBreakdown";
+import { Sparkline } from "@/components/Sparkline";
 import type { Decision, DecisionResult, SetupTag } from "@/lib/types";
 import { isHealthcareSector, isUtahTicker } from "@/lib/preferences";
+
+// v3.0 T2 — sortable scanner columns. Each click on a sortable header
+// cycles default → asc → desc → default.
+type SortKey =
+  | "default"
+  | "trend"
+  | "vol"
+  | "liquidity"
+  | "setup"
+  | "decision"
+  | "atr"
+  | "advUsd";
+type SortDir = "asc" | "desc";
+
+// Explicit orderings for enum-valued columns. Higher index = "better"
+// (so asc-sort lists worst → best, desc-sort lists best → worst).
+const TREND_ORDER: Record<DecisionResult["gateSummary"]["trend"], number> = {
+  COUNTER: 0,
+  MIXED: 1,
+  ALIGNED: 2,
+};
+const VOL_ORDER: Record<DecisionResult["gateSummary"]["vol"], number> = {
+  LOW: 0,
+  MED: 1,
+  HIGH: 2,
+};
+const LIQUIDITY_ORDER: Record<DecisionResult["gateSummary"]["liquidity"], number> = {
+  AVOID: 0,
+  CARE: 1,
+  CLEAN: 2,
+};
+const DECISION_ORDER: Record<Decision, number> = {
+  PASS: 0,
+  WATCH: 1,
+  TRADE: 2,
+};
 
 type ScanResponse = {
   config: {
@@ -155,7 +192,14 @@ function ToggleChip({
   );
 }
 
-export default function ScannerClient() {
+export type ScannerClientProps = {
+  // Server-prefetched last-N closes per ticker (uppercase keys).
+  // Used for inline sparklines. Optional — falls back to empty if the
+  // server-side universe fetch failed.
+  closesByTicker?: Record<string, number[]>;
+};
+
+export default function ScannerClient({ closesByTicker = {} }: ScannerClientProps = {}) {
   const [includeBlocked, setIncludeBlocked] = useState(false);
   const [allowEarnings, setAllowEarnings] = useState(false);
   const [decision, setDecision] = useState<Decision | "ALL">("ALL");
@@ -170,6 +214,25 @@ export default function ScannerClient() {
   const [momentumOnly, setMomentumOnly] = useState(false);
   const [utahOnly, setUtahOnly] = useState(false);
   const [healthcareOnly, setHealthcareOnly] = useState(false);
+
+  // T2 — column sort. Cycle: default → active asc → active desc → default.
+  const [sortKey, setSortKey] = useState<SortKey>("default");
+  const [sortDir, setSortDir] = useState<SortDir>("asc");
+
+  function cycleSort(key: Exclude<SortKey, "default">) {
+    if (sortKey !== key) {
+      setSortKey(key);
+      setSortDir("asc");
+      return;
+    }
+    if (sortDir === "asc") {
+      setSortDir("desc");
+      return;
+    }
+    // currently desc → return to default
+    setSortKey("default");
+    setSortDir("asc");
+  }
 
   // Feature F — quick-watch state. Loaded from /api/watch on mount;
   // toggled by per-row buttons.
@@ -210,13 +273,61 @@ export default function ScannerClient() {
       setupFilter === "ALL"
         ? afterSearch
         : afterSearch.filter((r) => r.gateSummary.setup === setupFilter);
-    return afterSetup.filter((r) => {
+    const afterToggles = afterSetup.filter((r) => {
       if (momentumOnly && !r.metrics.sustainedHighVol) return false;
       if (utahOnly && !isUtahTicker(r.ticker)) return false;
       if (healthcareOnly && !isHealthcareSector(r.sector)) return false;
       return true;
     });
-  }, [data, search, setupFilter, momentumOnly, utahOnly, healthcareOnly]);
+    if (sortKey === "default") return afterToggles;
+    // T2 — sort by the active column. We sort a copy; sign flips for desc.
+    const sign = sortDir === "asc" ? 1 : -1;
+    const compareNumber = (a: number, b: number) => (a - b) * sign;
+    const compareString = (a: string, b: string) =>
+      a.localeCompare(b) * sign;
+    const sorted = [...afterToggles].sort((a, b) => {
+      switch (sortKey) {
+        case "trend":
+          return compareNumber(
+            TREND_ORDER[a.gateSummary.trend],
+            TREND_ORDER[b.gateSummary.trend],
+          );
+        case "vol":
+          return compareNumber(
+            VOL_ORDER[a.gateSummary.vol],
+            VOL_ORDER[b.gateSummary.vol],
+          );
+        case "liquidity":
+          return compareNumber(
+            LIQUIDITY_ORDER[a.gateSummary.liquidity],
+            LIQUIDITY_ORDER[b.gateSummary.liquidity],
+          );
+        case "setup":
+          return compareString(a.gateSummary.setup, b.gateSummary.setup);
+        case "decision":
+          return compareNumber(
+            DECISION_ORDER[a.decision],
+            DECISION_ORDER[b.decision],
+          );
+        case "atr":
+          return compareNumber(a.metrics.atrPct, b.metrics.atrPct);
+        case "advUsd":
+          return compareNumber(a.metrics.advUsd, b.metrics.advUsd);
+        default:
+          return 0;
+      }
+    });
+    return sorted;
+  }, [
+    data,
+    search,
+    setupFilter,
+    momentumOnly,
+    utahOnly,
+    healthcareOnly,
+    sortKey,
+    sortDir,
+  ]);
 
   const summary = useMemo(() => {
     const results = filteredResults;
@@ -638,7 +749,14 @@ export default function ScannerClient() {
                         {r.sector} &middot; {r.name}
                       </div>
                     </div>
-                    <Badge tone={decisionTone(r.decision)}>{r.decision}</Badge>
+                    <div className="flex items-center gap-2">
+                      <Sparkline
+                        closes={closesByTicker[r.ticker.toUpperCase()] ?? []}
+                        width={56}
+                        height={20}
+                      />
+                      <Badge tone={decisionTone(r.decision)}>{r.decision}</Badge>
+                    </div>
                   </div>
 
                   {/* Key stats grid */}
@@ -716,12 +834,42 @@ export default function ScannerClient() {
                 <thead className="sticky top-0 z-10 bg-white shadow-[0_1px_3px_rgba(0,0,0,0.05)]">
                   <tr className="text-left text-xs text-zinc-500">
                     <th className="border-b px-4 py-2">Ticker</th>
-                    <th className="border-b px-4 py-2">Trend</th>
-                    <th className="border-b px-4 py-2">Vol</th>
-                    <th className="border-b px-4 py-2">Liquidity</th>
+                    <SortableHeader
+                      label="Trend"
+                      sortKey="trend"
+                      activeKey={sortKey}
+                      activeDir={sortDir}
+                      onClick={cycleSort}
+                    />
+                    <SortableHeader
+                      label="Vol"
+                      sortKey="vol"
+                      activeKey={sortKey}
+                      activeDir={sortDir}
+                      onClick={cycleSort}
+                    />
+                    <SortableHeader
+                      label="Liquidity"
+                      sortKey="liquidity"
+                      activeKey={sortKey}
+                      activeDir={sortDir}
+                      onClick={cycleSort}
+                    />
                     <th className="border-b px-4 py-2">Event</th>
-                    <th className="border-b px-4 py-2">Setup</th>
-                    <th className="border-b px-4 py-2">Decision</th>
+                    <SortableHeader
+                      label="Setup"
+                      sortKey="setup"
+                      activeKey={sortKey}
+                      activeDir={sortDir}
+                      onClick={cycleSort}
+                    />
+                    <SortableHeader
+                      label="Decision"
+                      sortKey="decision"
+                      activeKey={sortKey}
+                      activeDir={sortDir}
+                      onClick={cycleSort}
+                    />
                     <th className="border-b px-4 py-2">Why blocked?</th>
                   </tr>
                 </thead>
@@ -736,6 +884,11 @@ export default function ScannerClient() {
                           >
                             {r.ticker}
                           </Link>
+                          <Sparkline
+                            closes={closesByTicker[r.ticker.toUpperCase()] ?? []}
+                            width={50}
+                            height={18}
+                          />
                           <span className="truncate text-xs text-zinc-500">{r.sector}</span>
                         </div>
                         <div className="mt-0.5 truncate text-xs text-zinc-600">{r.name}</div>
@@ -853,6 +1006,41 @@ export default function ScannerClient() {
         )}
       </Drawer>
     </div>
+  );
+}
+
+// T2 — sortable column header. Renders <th> with a clickable label and
+// (when active) a ↑/↓ indicator. Clicking cycles default → asc → desc →
+// default via the parent's `cycleSort`.
+function SortableHeader({
+  label,
+  sortKey: key,
+  activeKey,
+  activeDir,
+  onClick,
+}: {
+  label: string;
+  sortKey: Exclude<SortKey, "default">;
+  activeKey: SortKey;
+  activeDir: SortDir;
+  onClick: (k: Exclude<SortKey, "default">) => void;
+}) {
+  const active = activeKey === key;
+  const arrow = !active ? "" : activeDir === "asc" ? " ↑" : " ↓";
+  return (
+    <th className="border-b px-4 py-2">
+      <button
+        type="button"
+        onClick={() => onClick(key)}
+        className={clsx(
+          "inline-flex items-center gap-1 text-xs uppercase tracking-wide hover:text-zinc-800",
+          active ? "font-semibold text-zinc-900" : "text-zinc-500",
+        )}
+      >
+        <span>{label}</span>
+        <span className="tabular-nums">{arrow}</span>
+      </button>
+    </th>
   );
 }
 
