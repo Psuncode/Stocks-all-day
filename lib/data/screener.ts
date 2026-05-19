@@ -2,6 +2,9 @@ import YahooFinance from "yahoo-finance2";
 
 const yf = new YahooFinance({ suppressNotices: ["yahooSurvey"] });
 
+// GSD review L1: gate verbose discovery logs behind DEBUG_DATA.
+const debug = process.env.DEBUG_DATA ? console.log : () => {};
+
 // ---------------------------------------------------------------------------
 // Types
 // ---------------------------------------------------------------------------
@@ -104,7 +107,7 @@ export async function fetchScreenerUniverse(): Promise<ScreenerQuote[]> {
   }
 
   const universe = [...seen.values()];
-  console.log(
+  debug(
     `[screener] Discovered ${universe.length} unique tickers from ${SCREENER_IDS.length} screeners`,
   );
   return universe;
@@ -121,7 +124,7 @@ export function preFilter(quotes: ScreenerQuote[]): ScreenerQuote[] {
     if (advUsd < 5_000_000) return false;
     return true;
   });
-  console.log(`[screener] Pre-filter: ${quotes.length} → ${filtered.length} candidates`);
+  debug(`[screener] Pre-filter: ${quotes.length} → ${filtered.length} candidates`);
   return filtered;
 }
 

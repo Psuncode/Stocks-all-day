@@ -1,6 +1,6 @@
 import { loadWatchlist } from "@/lib/thesis/load";
 import { evaluateRule } from "@/lib/thesis/evaluate-rules";
-import { horizonState } from "@/lib/thesis/horizon";
+import { daysUntil, horizonState } from "@/lib/thesis/horizon";
 import { getCachedSymbol } from "@/lib/data/cached-provider";
 import WatchlistView from "@/app/watchlist/watchlist-client";
 import type { EnrichedEntry, FireRecord } from "@/app/watchlist/_thesis-card";
@@ -8,8 +8,6 @@ import type { EnrichedEntry, FireRecord } from "@/app/watchlist/_thesis-card";
 // Page itself is dynamic (per-request), but per-symbol data is cached at
 // the call site via getCachedSymbol (15-min TTL).
 export const dynamic = "force-dynamic";
-
-const MS_PER_DAY = 24 * 60 * 60 * 1000;
 
 // GSD review H3: cap the per-symbol fan-out so a 50-ticker watchlist
 // doesn't try to make 50 simultaneous Yahoo calls on cold cache.
@@ -47,20 +45,6 @@ function priceProgress(
   return Math.max(0, Math.min(100, pct));
 }
 
-function daysFromToday(iso: string, today: Date): number {
-  const horizon = new Date(iso);
-  const horizonDay = Date.UTC(
-    horizon.getUTCFullYear(),
-    horizon.getUTCMonth(),
-    horizon.getUTCDate(),
-  );
-  const todayDay = Date.UTC(
-    today.getUTCFullYear(),
-    today.getUTCMonth(),
-    today.getUTCDate(),
-  );
-  return Math.round((horizonDay - todayDay) / MS_PER_DAY);
-}
 
 export default async function WatchlistPage() {
   const { watchlist, errors } = await loadWatchlist();
@@ -103,7 +87,7 @@ export default async function WatchlistPage() {
         horizon = {
           date: entry.thesis.time_horizon,
           state,
-          daysFromNow: daysFromToday(entry.thesis.time_horizon, today),
+          daysFromNow: daysUntil(entry.thesis.time_horizon, today),
         };
       }
 

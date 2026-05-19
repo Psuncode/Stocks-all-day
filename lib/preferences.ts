@@ -29,13 +29,15 @@ const HEALTHCARE_SECTORS = new Set(
   ].map((s) => s.toLowerCase()),
 );
 
+// GSD review M2: word-boundary regex avoids false positives like
+// "biofuels" or "carbon biomaterials" from matching the "bio" substring.
+const HEALTH_TOKEN_RE = /\b(health|healthcare|pharma|pharmaceutical|biotech|biotechnology|biologics?)\b/i;
+
 export function isHealthcareSector(sector: string | null | undefined): boolean {
   if (!sector) return false;
   const lower = sector.toLowerCase();
   if (HEALTHCARE_SECTORS.has(lower)) return true;
-  // Yahoo sometimes returns sub-sector strings; do a contains check as a
-  // fallback so we still catch "Healthcare Services" / "Health Care Plans".
-  return lower.includes("health") || lower.includes("pharma") || lower.includes("bio");
+  return HEALTH_TOKEN_RE.test(sector);
 }
 
 export function preferenceScore(opts: {

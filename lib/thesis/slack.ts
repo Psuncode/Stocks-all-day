@@ -5,7 +5,8 @@
  *
  * Charts: each pick gets a quickchart.io "shortlink" — we POST the chart config
  * to /chart/create and receive a short URL like https://quickchart.io/chart/render/sf-...
- * Inline-encoding 90 daily closes pushed the image_url over Slack's ~3KB limit
+ * Inline-encoding 30 daily closes (CHART_POINTS) plus the SMA15 overlay still
+ * pushed the image_url over Slack's ~3KB limit when annotations were enabled,
  * and the entire webhook payload was rejected silently. Shortlinks fix it.
  *
  * Failure modes:
@@ -367,6 +368,13 @@ export async function sendSlackDigest(
   const digestBlocks = await pickBlocks(picks, appUrl);
   blocks.push(...digestBlocks);
 
+  // GSD review M7: Slack rejects >50 blocks. Log when we truncate so
+  // future-us can see when the digest started losing content silently.
+  if (blocks.length > 50) {
+    console.warn(
+      `[slack] payload had ${blocks.length} blocks; truncated to Slack's 50-block limit.`,
+    );
+  }
   const payload: SlackPayload = { blocks: blocks.slice(0, 50) };
 
   try {

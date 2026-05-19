@@ -6,6 +6,7 @@ import type {
   GateResult,
   GateStatus,
   ScanConfig,
+  SetupTag,
   UniverseSymbol,
 } from "@/lib/types";
 import { atr, pct, rsi, sma, slope } from "@/lib/engine/indicators";
@@ -13,6 +14,14 @@ import { atr, pct, rsi, sma, slope } from "@/lib/engine/indicators";
 function round(n: number, d = 2) {
   const p = 10 ** d;
   return Math.round(n * p) / p;
+}
+
+// GSD review M3: single source of truth for the LOW/MED/HIGH banding.
+type VolBand = "LOW" | "MED" | "HIGH";
+function volBandFor(atrPct: number): VolBand {
+  if (atrPct > 4) return "HIGH";
+  if (atrPct > 2) return "MED";
+  return "LOW";
 }
 
 function daysBetween(aYmd: string, bYmd: string) {
@@ -160,6 +169,12 @@ export function buildSectorRsMap(
 ): Map<string, number> {
   const totals = new Map<string, { sum: number; count: number }>();
   for (const u of universe) {
+    // GSD review H5: skip names with too little history or bad data so
+    // sector RS isn't polluted by fallback / IPO-recent entries with
+    // junk rs60. This is independent of the scanner's includeBlocked
+    // flag — sector momentum is a market-wide signal, not a per-row UI
+    // choice.
+    if (u.candles.length < 60 || u.quote.last <= 0) continue;
     const sector = u.meta.sector;
     const m = deriveMetrics(u, spy);
     const cur = totals.get(sector);
@@ -335,7 +350,7 @@ export function evaluateSymbol(
 
   // Gate VOL
   const volChecks: GateResult["checks"] = [];
-  const volBand = m.atrPct > 4 ? "HIGH" : m.atrPct > 2 ? "MED" : "LOW";
+  const volBand = volBandFor(m.atrPct);
   volChecks.push({
     id: "atr_pct",
     label: "ATR% band",
@@ -534,8 +549,7 @@ export function evaluateSymbol(
     message: bounceOk ? "Oversold bounce setup." : "No oversold-bounce conditions.",
   });
 
-  type Setup = "PULLBACK" | "BASE_BREAKOUT" | "SQUEEZE" | "OVERSOLD_BOUNCE" | "NONE";
-  let setup: Setup = "NONE";
+  let setup: SetupTag = "NONE";
   // Counter-trend bounce takes precedence in counter-trend regimes;
   // otherwise prefer the trend-following setups.
   if (bounceOk) setup = "OVERSOLD_BOUNCE";
@@ -577,7 +591,12 @@ export function evaluateSymbol(
             : m.price;
 
   const stopDistPct = pct(entry - stop, entry);
-  const rr = (target - entry) / Math.max(0.01, entry - stop);
+  // GSD review L7: if the engine produced a degenerate stop (entry <= stop),
+  // the trade is uninvestable. Force rr to 0 so the SETUP gate fails the
+  // rr >= 2 check rather than dividing by a 0.01 floor and reporting a
+  // hugely-inflated R:R.
+  const riskDist = entry - stop;
+  const rr = riskDist > 0 ? (target - entry) / riskDist : 0;
 
   const triggerHit =
     setup === "PULLBACK"
@@ -718,7 +737,7 @@ function finalize(
   asOf: string,
   universe: UniverseSymbol[],
 ): DecisionResult {
-  const volBand = m.atrPct > 4 ? "HIGH" : m.atrPct > 2 ? "MED" : "LOW";
+  const volBand = volBandFor(m.atrPct);
   return {
     ticker: symbol.meta.ticker,
     name: symbol.meta.name,

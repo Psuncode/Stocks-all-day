@@ -4,6 +4,10 @@ import { fetchScreenerUniverse, preFilter, FALLBACK_TICKERS, UTAH_TICKERS } from
 import type { ScreenerQuote } from "@/lib/data/screener";
 import { MemCache } from "@/lib/data/cache";
 
+// GSD review L1: hot-path logs are noisy in Vercel; gate behind DEBUG_DATA
+// so the daily cron + page renders aren't dumping caching internals.
+const debug = process.env.DEBUG_DATA ? console.log : () => {};
+
 export type DataProvider = {
   getUniverse(): Promise<UniverseSymbol[]>;
   getSymbol(ticker: string): Promise<UniverseSymbol | null>;
@@ -29,9 +33,14 @@ export function getProvider(): DataProvider {
       // Pre-filter to candidates
       let candidates = preFilter(screenerQuotes);
 
-      // Fallback if screener returned nothing usable
+      // Fallback if screener returned nothing usable. GSD review M6:
+      // use an explicit boolean rather than the previous price===0 sentinel
+      // (a real Yahoo quote could legitimately return price 0 for a
+      // delisted/halted name).
+      let usingFallback = false;
       if (candidates.length === 0) {
         console.warn("[provider] No screener candidates, using fallback tickers");
+        usingFallback = true;
         candidates = FALLBACK_TICKERS.map((t) => ({
           ticker: t,
           name: t,
@@ -44,7 +53,7 @@ export function getProvider(): DataProvider {
       }
 
       // Phase 2: Detail fetch for qualifying stocks
-      const universe = candidates[0].price === 0
+      const universe = usingFallback
         ? await fetchFallbackUniverse()
         : await fetchUniverseFromScreener(candidates);
 
@@ -56,7 +65,7 @@ export function getProvider(): DataProvider {
         for (const r of utahResults) {
           if (r) universe.push(r);
         }
-        console.log(`[provider] Added ${utahResults.filter(Boolean).length}/${missingUtah.length} Utah tickers`);
+        debug(`[provider] Added ${utahResults.filter(Boolean).length}/${missingUtah.length} Utah tickers`);
       }
 
       universeCache.set(universe);

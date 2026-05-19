@@ -11,8 +11,8 @@ const focuses: DemoUser["focus"][] = ["Momentum", "Breakouts", "Mean Reversion"]
 
 export default function LoginPage() {
   const router = useRouter();
-  const [name, setName] = useState("Jamie Collins");
-  const [email, setEmail] = useState("jamie@atlasfund.com");
+  const [name, setName] = useState("");
+  const [email, setEmail] = useState("");
   const [role, setRole] = useState<DemoUser["role"]>("Trader");
   const [focus, setFocus] = useState<DemoUser["focus"]>("Momentum");
 
@@ -25,7 +25,7 @@ export default function LoginPage() {
             Sign in to your swing desk
           </h1>
           <p className="mt-2 text-sm text-zinc-600">
-            Configure your decision workspace, route alerts, and keep CapIQ context close to every ticker.
+            Personal swing-trading workspace — sign in to label this session.
           </p>
 
           <form

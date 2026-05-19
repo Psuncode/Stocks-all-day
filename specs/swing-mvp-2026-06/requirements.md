@@ -217,7 +217,7 @@ The MVP ships when, with no further dev intervention:
 
 1. The user can edit `watchlist.yaml` in Obsidian on desktop or mobile, and the `/watchlist` page reflects the changes on next page load — no localStorage, no in-app editor.
 2. The user can author a thesis + invalidation rules for ANGX (the live thesis from `2026-05-18 ANGX vs PTRN — Trade Setup Analysis`) and see them rendered correctly with current price progress.
-3. The user manually triggers "Run check now" with an ANGX rule deliberately set to fire (e.g. `price_below: 999`), and receives an email at `NOTIFY_EMAIL` within 60 seconds.
+3. The user manually triggers `POST /api/check-invalidations` with an ANGX rule deliberately set to fire (e.g. `price_below: 999`), and receives a Slack DM via `SLACK_WEBHOOK_URL` within 60 seconds. *(Updated from the original email-based criterion when Feature C switched delivery channels — see §6.)*
 4. The Vercel cron is configured and a successful daily run is logged at least once during the staging period.
 5. The user dismisses the localStorage migration banner once and never sees it again.
 

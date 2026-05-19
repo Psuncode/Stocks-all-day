@@ -12,7 +12,7 @@ export default function SettingsPage() {
           <div className="text-xs uppercase tracking-[0.3em] text-emerald-800">Workspace</div>
           <h1 className="mt-2 font-[family:var(--font-display)] text-3xl text-zinc-900">Settings</h1>
           <p className="mt-2 text-sm text-zinc-600">
-            This demo runs locally and can optionally use Gemini for plain-English explanations.
+            Personal swing-trading workspace. Optionally uses Gemini for plain-English explanations.
           </p>
         </div>
         <Link
@@ -66,8 +66,7 @@ export default function SettingsPage() {
             <span className="font-mono"> GEMINI_API_KEY</span> (optional).
           </div>
           <div className="mt-3 text-xs text-zinc-500">
-            Note: This demo uses mock market data. If you want live data, we can add a real data
-            provider next.
+            Uses live Yahoo Finance data via yahoo-finance2 (no key required).
           </div>
         </section>
 

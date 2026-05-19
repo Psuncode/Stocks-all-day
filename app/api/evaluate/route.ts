@@ -1,6 +1,7 @@
 import { getProvider } from "@/lib/data/provider";
 import { evaluateSymbol, todayYmd } from "@/lib/engine/evaluate";
 import { fetchSpyCandles } from "@/lib/data/yahoo";
+import type { DecisionResult, UniverseSymbol } from "@/lib/types";
 
 export const runtime = "nodejs";
 
@@ -40,15 +41,15 @@ export async function POST(req: Request) {
   const provider = getProvider();
   const [universe, spy] = await Promise.all([provider.getUniverse(), fetchSpyCandles()]);
 
-  const found = new Map<string, any>();
+  const found = new Map<string, UniverseSymbol>();
   for (const u of universe) found.set(u.meta.ticker.toUpperCase(), u);
 
   const asOf = todayYmd();
-  const results = [] as any[];
+  const results: DecisionResult[] = [];
   const notFound: string[] = [];
 
   for (const t of tickers) {
-    let symbol = found.get(t);
+    let symbol: UniverseSymbol | null = found.get(t) ?? null;
     if (!symbol) {
       symbol = await provider.getSymbol(t);
       if (!symbol) {

@@ -10,7 +10,7 @@ import {
 } from "@/lib/data/cached-provider";
 import { evaluateSymbol, todayYmd } from "@/lib/engine/evaluate";
 import { loadWatchlist } from "@/lib/thesis/load";
-import { horizonState } from "@/lib/thesis/horizon";
+import { daysUntil, horizonState } from "@/lib/thesis/horizon";
 import type { HorizonState } from "@/lib/thesis/horizon";
 import { suggestedShares } from "@/lib/thesis/sizing";
 import type { TickerEntry } from "@/lib/thesis/schema";
@@ -27,22 +27,6 @@ function horizonTone(state: HorizonState): "neutral" | "watch" | "block" {
   if (state === "expired") return "block";
   if (state === "approaching") return "watch";
   return "neutral";
-}
-
-function daysUntil(iso: string): number {
-  const horizon = new Date(iso);
-  const today = new Date();
-  const horizonDay = Date.UTC(
-    horizon.getUTCFullYear(),
-    horizon.getUTCMonth(),
-    horizon.getUTCDate(),
-  );
-  const todayDay = Date.UTC(
-    today.getUTCFullYear(),
-    today.getUTCMonth(),
-    today.getUTCDate(),
-  );
-  return Math.round((horizonDay - todayDay) / (24 * 60 * 60 * 1000));
 }
 
 function ConfidenceDots({ value }: { value: number }) {

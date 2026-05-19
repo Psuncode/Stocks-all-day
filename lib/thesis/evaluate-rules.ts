@@ -185,15 +185,19 @@ function priorWindow(candles: Candle[]): Candle[] {
 
 function priorRsiWindow(closes: number[], period: number): number[] {
   // RSI value at session i is computed using closes[..i] (inclusive).
-  // Build the prior-7 RSI values, one per session, ending at the
-  // second-to-last close.
+  // Build the prior-N RSI values (capped at DEDUP_WINDOW), one per session,
+  // ending at the second-to-last close.
+  //
+  // GSD review H4: previous code could produce >DEDUP_WINDOW values on
+  // short series (lastIdx - DEDUP_WINDOW < period). Clamp the count.
   const out: number[] = [];
   const lastIdx = closes.length - 1;
-  for (let i = Math.max(period, lastIdx - DEDUP_WINDOW); i < lastIdx; i++) {
+  const start = Math.max(period, lastIdx - DEDUP_WINDOW);
+  for (let i = start; i < lastIdx; i++) {
     const sliceCloses = closes.slice(0, i + 1);
     out.push(rsi(sliceCloses, period));
   }
-  return out;
+  return out.slice(-DEDUP_WINDOW);
 }
 
 /**
