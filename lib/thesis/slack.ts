@@ -155,11 +155,18 @@ async function pickBlocks(
       `vol ${r.gateSummary.vol.toLowerCase()} (ATR ${r.metrics.atrPct.toFixed(1)}%) · ` +
       `liquidity ${r.gateSummary.liquidity.toLowerCase()} (ADV$ ${(r.metrics.advUsd / 1_000_000).toFixed(0)}M)_`;
 
+    // Research links — one tap from Slack to Google Finance / Yahoo. Per
+    // user workflow: digest = decide whether to research further; external
+    // links = the deep-dive surface.
+    const researchLine =
+      `\n🔍 <https://www.google.com/finance/quote/${encodeURIComponent(r.ticker)}|Google Finance>` +
+      ` · <https://finance.yahoo.com/quote/${encodeURIComponent(r.ticker)}|Yahoo>`;
+
     blocks.push({
       type: "section",
       text: {
         type: "mrkdwn",
-        text: headerLine + "\n" + narrative + planLine + gates,
+        text: headerLine + "\n" + narrative + planLine + gates + researchLine,
       },
     });
 
@@ -186,6 +193,20 @@ async function pickBlocks(
 
 type PlanOverlay = { entry: number; stop: number; target: number };
 
+function rollingSma(
+  values: number[],
+  period: number,
+): Array<number | null> {
+  const out: Array<number | null> = [];
+  let sum = 0;
+  for (let i = 0; i < values.length; i++) {
+    sum += values[i]!;
+    if (i >= period) sum -= values[i - period]!;
+    out.push(i >= period - 1 ? sum / period : null);
+  }
+  return out;
+}
+
 async function chartShortUrl(
   ticker: string,
   candles: Array<{ t: string; c: number }>,
@@ -193,9 +214,21 @@ async function chartShortUrl(
 ): Promise<string | null> {
   if (candles.length < 2) return null;
 
-  const recent = candles.slice(-CHART_POINTS);
+  // Use the full 90 closes to seed the SMA15 lookback, then slice to the
+  // window we display so the SMA line has real values from session 1 of
+  // the visible chart instead of nulls.
+  const seedCount = Math.min(candles.length, CHART_POINTS + 14);
+  const seeded = candles.slice(-seedCount);
+  const seededCloses = seeded.map((c) => c.c);
+  const sma15Full = rollingSma(seededCloses, 15);
+  const visibleStart = Math.max(0, seeded.length - CHART_POINTS);
+  const recent = seeded.slice(visibleStart);
   const labels = recent.map((c) => c.t.slice(5));
   const data = recent.map((c) => c.c);
+  const sma15Data = sma15Full
+    .slice(visibleStart)
+    .map((v) => (v == null ? null : Number(v.toFixed(4))));
+
   const first = data[0] ?? 0;
   const last = data[data.length - 1] ?? 0;
   const positive = last >= first;
@@ -212,6 +245,17 @@ async function chartShortUrl(
       borderWidth: 2,
       pointRadius: 0,
       tension: 0.1,
+    },
+    {
+      label: "SMA15",
+      data: sma15Data,
+      borderColor: "rgba(120,113,108,0.85)",
+      backgroundColor: "transparent",
+      borderWidth: 1.5,
+      borderDash: [4, 4],
+      pointRadius: 0,
+      tension: 0.05,
+      spanGaps: true,
     },
   ];
 
@@ -236,13 +280,13 @@ async function chartShortUrl(
     options: {
       plugins: {
         legend: {
-          display: !!plan,
+          display: true,
           position: "bottom",
-          labels: { font: { size: 9 } },
+          labels: { font: { size: 9 }, boxWidth: 12 },
         },
         title: {
           display: true,
-          text: `${ticker} · last ${recent.length} sessions`,
+          text: `${ticker} · last ${recent.length} sessions · SMA15 dashed`,
           font: { size: 11 },
         },
       },
