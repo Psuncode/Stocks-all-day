@@ -3,6 +3,7 @@ import { Badge } from "@/components/Badge";
 import { GateBreakdown } from "@/components/GateBreakdown";
 import { PriceChart } from "@/components/PriceChart";
 import { GeminiExplain } from "@/app/symbol/[ticker]/gemini-explain";
+import { SymbolWatchButton } from "@/app/symbol/[ticker]/watch-button-client";
 import {
   getCachedSymbol,
   getCachedUniverse,
@@ -197,6 +198,13 @@ export default async function SymbolPage({
           <span className="text-sm text-zinc-600 md:max-w-md">
             {result.reason}
           </span>
+          <SymbolWatchButton
+            ticker={result.ticker}
+            name={result.name}
+            sector={result.sector}
+            decision={result.decision}
+            setup={result.gateSummary.setup}
+          />
         </div>
       </div>
 
@@ -396,11 +404,23 @@ export default async function SymbolPage({
               Not on watchlist
             </div>
             <p className="mt-2 leading-relaxed">
-              This ticker isn&apos;t in your watchlist. Add it in{" "}
+              Tap{" "}
+              <span className="inline-flex h-6 items-center gap-1 rounded-full border border-zinc-300 bg-white px-2 text-[10px] font-semibold uppercase tracking-wider text-zinc-700 align-middle">
+                <span aria-hidden="true">👁‍🗨</span>Watch
+              </span>{" "}
+              on this ticker&apos;s{" "}
+              <Link
+                href={`/scanner?search=${encodeURIComponent(result.ticker)}`}
+                className="font-medium text-emerald-800 underline"
+              >
+                scanner row
+              </Link>{" "}
+              for a one-tap quick watch. Or commit a full thesis with entry/exit/
+              invalidation rules to{" "}
               <code className="rounded bg-zinc-100 px-1 py-0.5 text-xs">
                 data/watchlist.yaml
-              </code>{" "}
-              to attach a thesis and start tracking invalidations.
+              </code>
+              .
             </p>
           </section>
         )}
@@ -443,7 +463,10 @@ export default async function SymbolPage({
 
       {/* Gemini explanation — bottom, optional */}
       <section className="mt-6">
-        <GeminiExplain result={result} />
+        <GeminiExplain
+          result={result}
+          enabled={Boolean(process.env.GEMINI_API_KEY)}
+        />
       </section>
     </main>
   );

@@ -606,12 +606,7 @@ export default function ScannerClient() {
             {error}
           </div>
         )}
-        {!error && !data && loading && (
-          <div className="flex items-center justify-center gap-3 px-4 py-16">
-            <span className="spinner-lg" />
-            <span className="text-sm text-zinc-500">Scanning universe...</span>
-          </div>
-        )}
+        {!error && !data && loading && <ScanProgress />}
 
         {data && (
           <>
@@ -852,6 +847,51 @@ export default function ScannerClient() {
           </div>
         )}
       </Drawer>
+    </div>
+  );
+}
+
+// v2.1 T2 — scanner cold-load progress UX. No real backend progress events
+// yet; we drive milestone copy off elapsed seconds so users know the page
+// isn't frozen during the ~10-15s universe scan.
+function ScanProgress() {
+  const [elapsed, setElapsed] = useState(0);
+  useEffect(() => {
+    const t = setInterval(() => setElapsed((s) => s + 1), 1000);
+    return () => clearInterval(t);
+  }, []);
+
+  let message = "Fetching universe…";
+  if (elapsed >= 3) message = "Evaluating ~600 tickers…";
+  if (elapsed >= 8) message = "Building setup classifications…";
+  if (elapsed >= 15) message = "Almost there — final ranking…";
+  if (elapsed >= 30) message = "Still working… cold cache hit, this run will be slower than usual.";
+
+  // Progress bar: indeterminate-looking with a slow fill anchored to elapsed.
+  const fillPct = Math.min(95, elapsed * 6);
+
+  return (
+    <div className="flex flex-col items-center gap-3 px-4 py-16">
+      <div className="flex items-center gap-3">
+        <span className="spinner-lg" />
+        <span className="text-sm text-zinc-700">{message}</span>
+      </div>
+      <div
+        className="h-1 w-64 max-w-full overflow-hidden rounded-full bg-zinc-100"
+        role="progressbar"
+        aria-valuemin={0}
+        aria-valuemax={100}
+        aria-valuenow={fillPct}
+        aria-label="Scan progress (estimated)"
+      >
+        <div
+          className="h-full rounded-full bg-emerald-700 transition-all duration-1000 ease-linear"
+          style={{ width: `${fillPct}%` }}
+        />
+      </div>
+      <div className="text-[11px] uppercase tracking-[0.2em] text-zinc-500 tabular-nums">
+        {elapsed}s elapsed
+      </div>
     </div>
   );
 }

@@ -27,7 +27,16 @@ function buildContext(r: DecisionResult) {
   };
 }
 
-export function GeminiExplain({ result }: { result: DecisionResult }) {
+export function GeminiExplain({
+  result,
+  enabled = true,
+}: {
+  result: DecisionResult;
+  // v2.1 T4: server passes `false` when GEMINI_API_KEY is unset so the
+  // button can be disabled with an explanatory tooltip instead of letting
+  // the click silently fail at the API.
+  enabled?: boolean;
+}) {
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [text, setText] = useState<string | null>(null);
@@ -66,6 +75,9 @@ export function GeminiExplain({ result }: { result: DecisionResult }) {
     }
   }
 
+  const buttonDisabled = loading || !enabled;
+  const tooltip = !enabled ? "Enable Gemini in Settings" : undefined;
+
   return (
     <div className="rounded-[28px] border border-white/70 bg-white/80 p-6 shadow-sm">
       <div className="flex items-start justify-between gap-3">
@@ -73,12 +85,19 @@ export function GeminiExplain({ result }: { result: DecisionResult }) {
           <div className="text-xs uppercase tracking-[0.24em] text-zinc-500">Gemini explanation</div>
           <div className="mt-2 text-xs text-zinc-500">
             Optional. Uses your server-side <span className="font-mono">GEMINI_API_KEY</span>.
+            {!enabled ? (
+              <span className="ml-2 rounded-full bg-zinc-100 px-2 py-0.5 text-[10px] font-semibold uppercase tracking-wide text-zinc-500">
+                disabled
+              </span>
+            ) : null}
           </div>
         </div>
         <button
           onClick={run}
-          disabled={loading}
-          className="rounded-full bg-emerald-900 px-4 py-2 text-[11px] font-semibold uppercase tracking-[0.2em] text-white shadow-lg shadow-emerald-200/50 transition-colors hover:bg-emerald-800 disabled:opacity-50"
+          disabled={buttonDisabled}
+          title={tooltip}
+          aria-disabled={buttonDisabled}
+          className="rounded-full bg-emerald-900 px-4 py-2 text-[11px] font-semibold uppercase tracking-[0.2em] text-white shadow-lg shadow-emerald-200/50 transition-colors hover:bg-emerald-800 disabled:cursor-not-allowed disabled:bg-zinc-300 disabled:text-zinc-500 disabled:shadow-none"
         >
           {loading ? "Asking…" : "Explain"}
         </button>
@@ -92,8 +111,20 @@ export function GeminiExplain({ result }: { result: DecisionResult }) {
       )}
       {!error && !text && (
         <div className="mt-4 text-sm text-zinc-600">
-          Click <span className="font-medium">Explain</span> to get a quick summary of the gate
-          results.
+          {enabled ? (
+            <>
+              Click <span className="font-medium">Explain</span> to get a quick summary of the gate
+              results.
+            </>
+          ) : (
+            <>
+              Add <span className="font-mono">GEMINI_API_KEY</span> to your environment to enable
+              plain-English summaries.{" "}
+              <a className="text-emerald-800 underline" href="/settings">
+                Settings →
+              </a>
+            </>
+          )}
         </div>
       )}
     </div>
