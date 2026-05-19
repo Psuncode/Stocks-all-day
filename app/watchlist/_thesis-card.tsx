@@ -24,7 +24,30 @@ export type EnrichedEntry = {
     description: string;
     ev: RuleEvaluation | null;
   }[];
+  // T5 — Earnings calendar overlay. ISO YYYY-MM-DD when known, null otherwise.
+  earningsDate?: string | null;
+  // Calendar days from today; negative when in the past. Optional so cards
+  // without earnings data simply omit the chip.
+  daysToEarnings?: number | null;
 };
+
+// T5 — format an ISO date as e.g. "Aug 31". Falls back to the raw slice if
+// the date is unparseable.
+function formatEarningsDate(iso: string): string {
+  const d = new Date(iso);
+  if (Number.isNaN(d.getTime())) return iso.slice(0, 10);
+  return d.toLocaleDateString("en-US", { month: "short", day: "numeric" });
+}
+
+// T6 — 90-day default thesis window. YAML entries don't carry a created_at,
+// so we assume each thesis spans the quarter ending at time_horizon.
+const THESIS_WINDOW_DAYS = 90;
+
+function progressBarColor(pctElapsed: number): string {
+  if (pctElapsed >= 100) return "bg-red-500";
+  if (pctElapsed >= 80) return "bg-amber-500";
+  return "bg-emerald-500";
+}
 
 function horizonTone(state: HorizonState): "neutral" | "watch" | "block" {
   if (state === "future") return "neutral";
@@ -67,6 +90,37 @@ export function ThesisCard({
     data;
   const t = entry.ticker;
   const thesis = entry.thesis;
+
+  // T5 — earnings chip visibility: only when known AND within the next 30 days
+  // (inclusive of today, exclusive of past). Engine already advances past
+  // events so we treat negative deltas as "not interesting" and hide.
+  const earningsDate = data.earningsDate ?? null;
+  const daysToEarnings = data.daysToEarnings ?? null;
+  const showEarningsChip =
+    !!earningsDate &&
+    daysToEarnings !== null &&
+    daysToEarnings >= 0 &&
+    daysToEarnings <= 30;
+  const earningsInEventWindow =
+    daysToEarnings !== null && daysToEarnings >= 0 && daysToEarnings <= 10;
+
+  // T6 — days-left progress bar. Assume a 90-day window ending at
+  // time_horizon. elapsedDays = window - daysFromHorizon, clamped to
+  // [0, window]. If today is past the horizon, bar fills past 100%.
+  let pctElapsed: number | null = null;
+  if (horizon) {
+    const daysFromHorizon = horizon.daysFromNow; // positive = future, negative = past
+    const rawElapsed = THESIS_WINDOW_DAYS - daysFromHorizon;
+    const clampedElapsed = Math.max(
+      0,
+      Math.min(THESIS_WINDOW_DAYS, rawElapsed),
+    );
+    // Allow >100% so the bar can render fully red when past horizon.
+    pctElapsed =
+      daysFromHorizon < 0
+        ? Math.min(150, (rawElapsed / THESIS_WINDOW_DAYS) * 100)
+        : (clampedElapsed / THESIS_WINDOW_DAYS) * 100;
+  }
 
   return (
     <div
@@ -139,7 +193,32 @@ export function ThesisCard({
                 {horizonLabel(horizon.state, horizon.date, horizon.daysFromNow)}
               </Badge>
             )}
+            {showEarningsChip && earningsDate && daysToEarnings !== null && (
+              <Badge tone={earningsInEventWindow ? "watch" : "info"}>
+                📅 Earnings {formatEarningsDate(earningsDate)} · in{" "}
+                {daysToEarnings}d
+              </Badge>
+            )}
           </div>
+
+          {/* T6 — days-left progress bar: how much of a 90-day thesis window
+              has elapsed up to time_horizon. Supplementary to the horizon
+              badge above, not a replacement. */}
+          {pctElapsed !== null && (
+            <div
+              className="mt-1 h-1 w-full overflow-hidden rounded-full bg-zinc-100"
+              role="progressbar"
+              aria-label="Thesis horizon elapsed"
+              aria-valuenow={Math.round(Math.min(100, pctElapsed))}
+              aria-valuemin={0}
+              aria-valuemax={100}
+            >
+              <div
+                className={clsx("h-full", progressBarColor(pctElapsed))}
+                style={{ width: `${Math.min(100, pctElapsed)}%` }}
+              />
+            </div>
+          )}
 
           {/* Entry → exit + progress bar */}
           <div className="mt-1">

@@ -104,6 +104,12 @@ export default async function WatchlistPage() {
         );
       }
 
+      // T5 — surface the next earnings date when known. Engine already
+      // fetches this per symbol; no new external calls.
+      const earningsDate = symbol?.earningsDate ?? null;
+      const daysToEarnings =
+        earningsDate !== null ? daysUntil(earningsDate, today) : null;
+
       return {
         entry,
         available: symbol !== null,
@@ -112,6 +118,8 @@ export default async function WatchlistPage() {
         priceProgressPct: progress,
         fires,
         ruleEvaluations,
+        earningsDate,
+        daysToEarnings,
       };
     },
   );
