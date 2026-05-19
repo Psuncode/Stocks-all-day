@@ -107,31 +107,36 @@ function setupLabel(setup: string): string {
 function decisionTag(decision: string): string {
   if (decision === "TRADE") return "⭐ TRADE";
   if (decision === "WATCH") return "👀 WATCH";
+  if (decision === "PASS") return "⏸️ PASS";
   return decision;
 }
 
+function tierFallbackNote(decision: string): string | null {
+  if (decision === "WATCH") {
+    return "_No TRADE today — closest WATCH below._";
+  }
+  if (decision === "PASS") {
+    return "_No TRADE or WATCH today — best-ranked candidate is PASS. Honest stand-down with full context below._";
+  }
+  return null;
+}
+
 async function pickBlocks(
-  picks: DigestPick[],
+  topPick: DigestPick | null,
   appUrl: string,
 ): Promise<SlackBlock[]> {
-  if (picks.length === 0) return [];
+  if (!topPick) return [];
   const nowEpoch = Math.floor(Date.now() / 1000);
+  const r = topPick.result;
 
-  // GSD review H6: chart shortlink POSTs to quickchart.io run in parallel
-  // instead of awaiting one at a time inside the block-build loop.
-  // Saves ~2.5s on a 5-pick digest.
-  const chartUrls = await Promise.all(
-    picks.map((pick) =>
-      chartShortUrl(pick.result.ticker, pick.candles, pick.result.plan),
-    ),
-  );
+  const chartUrl = await chartShortUrl(r.ticker, topPick.candles, r.plan);
 
   const blocks: SlackBlock[] = [
     {
       type: "header",
       text: {
         type: "plain_text",
-        text: `📊 Today's ${picks.length}`,
+        text: "📊 Today's pick",
         emoji: true,
       },
     },
@@ -140,64 +145,60 @@ async function pickBlocks(
       elements: [
         {
           type: "mrkdwn",
-          text: `<!date^${nowEpoch}^{date_pretty}|today> · engine-ranked candidates · not investment advice`,
+          text: `<!date^${nowEpoch}^{date_pretty}|today> · engine-ranked best candidate · not investment advice`,
         },
       ],
     },
   ];
 
-  for (let i = 0; i < picks.length; i++) {
-    const pick = picks[i]!;
-    const r = pick.result;
-    const tickerLink = `*<${appUrl}/symbol/${r.ticker}|${r.ticker}>*`;
-    const price = `\`$${r.metrics.price.toFixed(2)}\``;
-    const setup = setupLabel(r.gateSummary.setup);
-    const setupTag = setup ? `  ·  *${setup}*` : "";
-    const sector = r.sector ? `  ·  ${r.sector}` : "";
-
-    const momentumTag = r.metrics.sustainedHighVol ? "  ·  🌀 3W momentum" : "";
-    const prefTags: string[] = [];
-    if (isUtahTicker(r.ticker)) prefTags.push("🏔️ Utah");
-    if (isHealthcareSector(r.sector)) prefTags.push("❤️ Healthcare");
-    const prefSuffix = prefTags.length ? "  ·  " + prefTags.join(" · ") : "";
-    const headerLine = `${tickerLink}  ${price}  ·  ${decisionTag(r.decision)}${setupTag}${momentumTag}${sector}${prefSuffix}`;
-    const narrative = `> ${pick.narrative}`;
-    const planLine = r.plan
-      ? `\nEntry \`$${r.plan.entry}\` → Stop \`$${r.plan.stop}\` → Target \`$${r.plan.target}\`  ·  *R:R ${r.plan.rr}x*  ·  est ${r.plan.estHold}`
-      : "";
-
-    const gates =
-      `\n_Trend ${r.gateSummary.trend.toLowerCase()} · ` +
-      `vol ${r.gateSummary.vol.toLowerCase()} (ATR ${r.metrics.atrPct.toFixed(1)}%) · ` +
-      `liquidity ${r.gateSummary.liquidity.toLowerCase()} (ADV$ ${(r.metrics.advUsd / 1_000_000).toFixed(0)}M)_`;
-
-    // Research links — one tap from Slack to Google Finance / Yahoo. Per
-    // user workflow: digest = decide whether to research further; external
-    // links = the deep-dive surface.
-    const researchLine =
-      `\n🔍 <https://www.google.com/finance/quote/${encodeURIComponent(r.ticker)}|Google Finance>` +
-      ` · <https://finance.yahoo.com/quote/${encodeURIComponent(r.ticker)}|Yahoo>`;
-
+  const fallbackNote = tierFallbackNote(r.decision);
+  if (fallbackNote) {
     blocks.push({
       type: "section",
-      text: {
-        type: "mrkdwn",
-        text: headerLine + "\n" + narrative + planLine + gates + researchLine,
-      },
+      text: { type: "mrkdwn", text: fallbackNote },
     });
+  }
 
-    const chart = chartUrls[i];
-    if (chart) {
-      blocks.push({
-        type: "image",
-        image_url: chart,
-        alt_text: `${r.ticker} ${CHART_POINTS}-session chart`,
-      });
-    }
+  const tickerLink = `*<${appUrl}/symbol/${r.ticker}|${r.ticker}>*`;
+  const price = `\`$${r.metrics.price.toFixed(2)}\``;
+  const setup = setupLabel(r.gateSummary.setup);
+  const setupTag = setup ? `  ·  *${setup}*` : "";
+  const sector = r.sector ? `  ·  ${r.sector}` : "";
 
-    if (i < picks.length - 1) {
-      blocks.push({ type: "divider" });
-    }
+  const momentumTag = r.metrics.sustainedHighVol ? "  ·  🌀 3W momentum" : "";
+  const prefTags: string[] = [];
+  if (isUtahTicker(r.ticker)) prefTags.push("🏔️ Utah");
+  if (isHealthcareSector(r.sector)) prefTags.push("❤️ Healthcare");
+  const prefSuffix = prefTags.length ? "  ·  " + prefTags.join(" · ") : "";
+  const headerLine = `${tickerLink}  ${price}  ·  ${decisionTag(r.decision)}${setupTag}${momentumTag}${sector}${prefSuffix}`;
+  const narrative = `> ${topPick.narrative}`;
+  const planLine = r.plan
+    ? `\nEntry \`$${r.plan.entry}\` → Stop \`$${r.plan.stop}\` → Target \`$${r.plan.target}\`  ·  *R:R ${r.plan.rr}x*  ·  est ${r.plan.estHold}`
+    : "";
+
+  const gates =
+    `\n_Trend ${r.gateSummary.trend.toLowerCase()} · ` +
+    `vol ${r.gateSummary.vol.toLowerCase()} (ATR ${r.metrics.atrPct.toFixed(1)}%) · ` +
+    `liquidity ${r.gateSummary.liquidity.toLowerCase()} (ADV$ ${(r.metrics.advUsd / 1_000_000).toFixed(0)}M)_`;
+
+  const researchLine =
+    `\n🔍 <https://www.google.com/finance/quote/${encodeURIComponent(r.ticker)}|Google Finance>` +
+    ` · <https://finance.yahoo.com/quote/${encodeURIComponent(r.ticker)}|Yahoo>`;
+
+  blocks.push({
+    type: "section",
+    text: {
+      type: "mrkdwn",
+      text: headerLine + "\n" + narrative + planLine + gates + researchLine,
+    },
+  });
+
+  if (chartUrl) {
+    blocks.push({
+      type: "image",
+      image_url: chartUrl,
+      alt_text: `${r.ticker} ${CHART_POINTS}-session chart`,
+    });
   }
 
   return blocks;
@@ -467,15 +468,15 @@ function journalBlocks(
 
 export async function sendSlackDigest(
   fires: FireRecord[],
-  picks: DigestPick[] = [],
+  topPick: DigestPick | null = null,
   journal?: JournalDigest,
 ): Promise<void> {
-  if (fires.length === 0 && picks.length === 0 && !journal) return;
+  if (fires.length === 0 && !topPick && !journal) return;
 
   const webhook = process.env.SLACK_WEBHOOK_URL;
   if (!webhook || webhook.length === 0) {
     console.warn(
-      `[slack] SLACK_WEBHOOK_URL unset — skipping. Would have sent ${fires.length} fire(s) + ${picks.length} pick(s).`,
+      `[slack] SLACK_WEBHOOK_URL unset — skipping. Would have sent ${fires.length} fire(s) + ${topPick ? 1 : 0} pick(s).`,
     );
     return;
   }
@@ -486,12 +487,11 @@ export async function sendSlackDigest(
   const fireSection = fireBlocks(fires, appUrl);
   blocks.push(...fireSection);
 
-  if (fireSection.length > 0 && picks.length > 0) {
+  if (fireSection.length > 0 && topPick) {
     blocks.push({ type: "divider" });
   }
 
-  // Build digest blocks in parallel (chart shortlinks fan out to quickchart).
-  const digestBlocks = await pickBlocks(picks, appUrl);
+  const digestBlocks = await pickBlocks(topPick, appUrl);
   blocks.push(...digestBlocks);
 
   // v4.0 T4: Friday journal section appears below the digest picks. Caller

@@ -18,15 +18,18 @@ import { preferenceScore } from "@/lib/preferences";
 
 export type DigestPick = {
   result: DecisionResult;
-  // Last ~90 daily closes for the chart. Plain `{t,c}` pairs to keep the
-  // payload small when this object crosses module boundaries.
   candles: Array<{ t: string; c: number }>;
-  // Pre-built per-pick narrative (Slack digest description). Computed at
-  // build time when we still have the full candle (with volume + OHL).
   narrative: string;
 };
 
+export type DigestResult = {
+  picks: DigestPick[];
+  topPick: DigestPick | null;
+};
+
 const TOP_N = 5;
+
+const DECISION_ORDER: Record<string, number> = { TRADE: 0, WATCH: 1, PASS: 2 };
 
 const DIGEST_CFG: ScanConfig = {
   includeBlocked: false,
@@ -36,7 +39,23 @@ const DIGEST_CFG: ScanConfig = {
   maxRows: 0,
 };
 
-export async function buildDigest(): Promise<DigestPick[]> {
+function compareForDigest(a: DecisionResult, b: DecisionResult): number {
+  const dord =
+    (DECISION_ORDER[a.decision] ?? 99) - (DECISION_ORDER[b.decision] ?? 99);
+  if (dord !== 0) return dord;
+  if (a.metrics.sustainedHighVol !== b.metrics.sustainedHighVol) {
+    return a.metrics.sustainedHighVol ? -1 : 1;
+  }
+  const aPref = preferenceScore({ ticker: a.ticker, sector: a.sector });
+  const bPref = preferenceScore({ ticker: b.ticker, sector: b.sector });
+  if (aPref !== bPref) return bPref - aPref;
+  const aRr = a.plan?.rr ?? 0;
+  const bRr = b.plan?.rr ?? 0;
+  if (aRr !== bRr) return bRr - aRr;
+  return b.metrics.advUsd - a.metrics.advUsd;
+}
+
+export async function buildDigest(): Promise<DigestResult> {
   const provider = getProvider();
   let universe;
   let spy;
@@ -47,50 +66,30 @@ export async function buildDigest(): Promise<DigestPick[]> {
     ]);
   } catch (e) {
     console.warn(`[digest] universe/spy fetch failed: ${(e as Error).message}`);
-    return [];
+    return { picks: [], topPick: null };
   }
 
   if (universe.length === 0) {
     console.warn("[digest] universe empty — skipping");
-    return [];
+    return { picks: [], topPick: null };
   }
 
   const results = runScan(universe, DIGEST_CFG, spy);
-  const candidates = results.filter(
+  const allRanked = [...results].sort(compareForDigest);
+  const tradeWatch = allRanked.filter(
     (r) => r.decision === "TRADE" || r.decision === "WATCH",
   );
 
-  candidates.sort((a, b) => {
-    // Decision tier first: TRADE before WATCH.
-    if (a.decision !== b.decision) {
-      return a.decision === "TRADE" ? -1 : 1;
-    }
-    // Within a tier, bias toward 3W momentum (high vol + tracking SMA15).
-    if (a.metrics.sustainedHighVol !== b.metrics.sustainedHighVol) {
-      return a.metrics.sustainedHighVol ? -1 : 1;
-    }
-    // Then user preference: Utah-based + healthcare get a soft boost so
-    // the user sees names they understand earlier in the digest.
-    const aPref = preferenceScore({ ticker: a.ticker, sector: a.sector });
-    const bPref = preferenceScore({ ticker: b.ticker, sector: b.sector });
-    if (aPref !== bPref) return bPref - aPref;
-    // Then R:R, then ADV$ — both descending.
-    const aRr = a.plan?.rr ?? 0;
-    const bRr = b.plan?.rr ?? 0;
-    if (aRr !== bRr) return bRr - aRr;
-    return b.metrics.advUsd - a.metrics.advUsd;
-  });
-
-  const top = candidates.slice(0, TOP_N);
-
-  // Attach 90d candle history per pick. The universe array already has candles
-  // loaded, so this is a constant-time lookup, not another fetch.
   const universeByTicker = new Map(universe.map((u) => [u.meta.ticker, u]));
-  return top.map((result) => {
+  const attach = (result: DecisionResult): DigestPick => {
     const sym = universeByTicker.get(result.ticker);
     const fullCandles = sym?.candles ?? [];
     const candles = fullCandles.slice(-90).map((c) => ({ t: c.t, c: c.c }));
     const narrative = buildNarrative(result, fullCandles);
     return { result, candles, narrative };
-  });
+  };
+
+  const picks = tradeWatch.slice(0, TOP_N).map(attach);
+  const topPick = allRanked.length > 0 ? attach(allRanked[0]!) : null;
+  return { picks, topPick };
 }

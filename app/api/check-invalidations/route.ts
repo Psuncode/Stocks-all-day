@@ -8,6 +8,7 @@ import {
   type JournalDigest,
 } from "@/lib/thesis/slack";
 import { buildDigest, type DigestPick } from "@/lib/digest/build";
+
 import { persistDigest } from "@/lib/digest/archive";
 import { todayYmd } from "@/lib/engine/evaluate";
 import { loadWeeklyStats } from "@/lib/journal/archive";
@@ -123,12 +124,16 @@ export async function POST(req: Request): Promise<Response> {
     }
   }
 
-  // Feature D — build the daily top-5 digest in parallel with no extra Yahoo
-  // round-trips beyond the standard scan path. Failures here must NOT block
+  // Feature D — build the daily digest. Web archive uses `picks` (top 5 of
+  // TRADE+WATCH); Slack uses `topPick` (single best pick across all tiers,
+  // including PASS as final fallback). Failures here must NOT block
   // invalidation alerts (requirements.md §D.6).
   let picks: DigestPick[] = [];
+  let topPick: DigestPick | null = null;
   try {
-    picks = await buildDigest();
+    const built = await buildDigest();
+    picks = built.picks;
+    topPick = built.topPick;
   } catch (e) {
     console.error(
       `[check-invalidations] digest build failed: ${(e as Error).message}`,
@@ -172,7 +177,7 @@ export async function POST(req: Request): Promise<Response> {
   // Single combined POST: fires (if any) + digest (if any) + journal (Fri only).
   // Skipped when all are empty or when SLACK_WEBHOOK_URL is unset. Errors
   // swallowed inside.
-  await sendSlackDigest(fires, picks, journal);
+  await sendSlackDigest(fires, topPick, journal);
 
   const body: CheckResponse = {
     checked: active.length,
