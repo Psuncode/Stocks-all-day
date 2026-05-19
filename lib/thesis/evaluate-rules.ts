@@ -20,12 +20,14 @@ const DEDUP_WINDOW = 7;
  * recent candle (candles[-8..-1]). If the same fire condition would have
  * tripped on any of those sessions, the current fire is suppressed.
  *
- * The `news_match` signal is a v1 stub — it never fires and is flagged
+ * The `news_match` signal performs case-insensitive substring matching
+ * against `newsHeadlines` when provided; when omitted, it reports
  * `pending_news_source` per requirements.md §B.2.6.
  */
 export function evaluateRule(
   rule: InvalidationRule,
   candles: Candle[],
+  newsHeadlines?: string[],
 ): RuleEvaluation {
   // No candles → cannot evaluate.
   if (candles.length === 0) {
@@ -148,13 +150,24 @@ export function evaluateRule(
       };
     }
     case "news_match": {
-      // v1 stub — wiring a news source is post-Aug-17 work.
+      if (newsHeadlines === undefined) {
+        return {
+          fired: false,
+          suppressed: false,
+          observed: "n/a",
+          threshold: rule.pattern,
+          status: "pending_news_source",
+        };
+      }
+      const needle = rule.pattern.toLowerCase();
+      const fired = newsHeadlines.some((h) =>
+        h.toLowerCase().includes(needle),
+      );
       return {
-        fired: false,
+        fired,
         suppressed: false,
-        observed: "n/a",
+        observed: newsHeadlines.length,
         threshold: rule.pattern,
-        status: "pending_news_source",
       };
     }
   }
