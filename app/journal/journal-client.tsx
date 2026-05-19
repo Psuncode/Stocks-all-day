@@ -16,6 +16,7 @@
 import { useCallback, useMemo, useState } from "react";
 import Link from "next/link";
 import { Badge } from "@/components/Badge";
+import { Drawer } from "@/components/Drawer";
 import type {
   TradeRecord,
   UpdateTradeInput,
@@ -488,46 +489,44 @@ export default function JournalClient({
         </>
       )}
 
-      {/* Edit modal */}
-      {editingId && editForm ? (
-        <EditModal
-          form={editForm}
-          setForm={(next) =>
-            setEditForm((prev) =>
-              typeof next === "function"
-                ? prev
-                  ? next(prev)
-                  : prev
-                : next,
-            )
-          }
-          today={today}
-          activeTickers={activeTickers}
-          busy={editBusy}
-          error={editError}
-          deleteEnabled={deleteEnabled}
-          deleteConfirm={deleteConfirm}
-          onCancel={() => {
-            setEditingId(null);
-            setEditForm(null);
-            setEditError(null);
-            setDeleteConfirm(false);
-          }}
-          onSave={handleEditSave}
-          onDelete={handleEditDelete}
-          onMarkClosed={() => {
-            setEditForm((prev) =>
-              prev
-                ? {
-                    ...prev,
-                    status: "closed",
-                    exit_date: prev.exit_date || today,
-                  }
-                : prev,
-            );
-          }}
-        />
-      ) : null}
+      {/* Edit drawer */}
+      <EditDrawer
+        form={editForm}
+        setForm={(next) =>
+          setEditForm((prev) =>
+            typeof next === "function"
+              ? prev
+                ? next(prev)
+                : prev
+              : next,
+          )
+        }
+        today={today}
+        activeTickers={activeTickers}
+        busy={editBusy}
+        error={editError}
+        deleteEnabled={deleteEnabled}
+        deleteConfirm={deleteConfirm}
+        onCancel={() => {
+          setEditingId(null);
+          setEditForm(null);
+          setEditError(null);
+          setDeleteConfirm(false);
+        }}
+        onSave={handleEditSave}
+        onDelete={handleEditDelete}
+        onMarkClosed={() => {
+          setEditForm((prev) =>
+            prev
+              ? {
+                  ...prev,
+                  status: "closed",
+                  exit_date: prev.exit_date || today,
+                }
+              : prev,
+          );
+        }}
+      />
     </>
   );
 }
@@ -848,10 +847,11 @@ function TradeCardMobile({
 }
 
 // ---------------------------------------------------------------------------
-// Edit modal
+// Edit drawer — wraps the edit form in the accessible <Drawer> component
+// (focus trap, Escape close, aria-modal, prior-focus restore handled there).
 // ---------------------------------------------------------------------------
 
-function EditModal({
+function EditDrawer({
   form,
   setForm,
   today,
@@ -865,7 +865,7 @@ function EditModal({
   onDelete,
   onMarkClosed,
 }: {
-  form: FormState;
+  form: FormState | null;
   setForm: (next: FormState | ((prev: FormState) => FormState)) => void;
   today: string;
   activeTickers: string[];
@@ -878,88 +878,82 @@ function EditModal({
   onDelete: () => void;
   onMarkClosed: () => void;
 }) {
+  const open = form !== null;
+  // Title is used by Drawer for aria-labelledby. Keep stable when closing
+  // so the closing animation still has a label.
+  const title = form ? `Edit trade · ${form.ticker || "—"}` : "Edit trade";
+
   return (
-    <div
-      className="fixed inset-0 z-50 flex items-start justify-center overflow-auto bg-zinc-900/40 p-4 pt-12 backdrop-blur"
-      onClick={onCancel}
-      role="dialog"
-      aria-modal="true"
-    >
-      <div
-        className="w-full max-w-3xl rounded-[28px] border border-white/70 bg-white p-6 shadow-xl"
-        onClick={(e) => e.stopPropagation()}
-      >
-        <div className="flex items-baseline justify-between gap-3">
-          <div>
+    <Drawer open={open} title={title} onClose={onCancel}>
+      {form ? (
+        <div>
+          <div className="flex items-baseline justify-between gap-3">
             <div className="text-xs uppercase tracking-[0.24em] text-emerald-800">
               Edit trade
             </div>
-            <h2 className="mt-1 font-[family:var(--font-display)] text-xl text-zinc-900">
-              {form.ticker || "—"}
-            </h2>
-          </div>
-          {form.status === "open" ? (
-            <button
-              type="button"
-              onClick={onMarkClosed}
-              className="rounded-2xl border border-emerald-300 bg-emerald-50 px-3 py-1.5 text-xs font-semibold text-emerald-800 hover:bg-emerald-100"
-              disabled={busy}
-            >
-              Mark closed
-            </button>
-          ) : null}
-        </div>
-
-        <TradeForm
-          form={form}
-          setForm={setForm}
-          activeTickers={activeTickers}
-          today={today}
-        />
-
-        {error ? (
-          <div className="mt-3 rounded-lg border border-red-200 bg-red-50 px-3 py-2 text-xs text-red-800">
-            {error}
-          </div>
-        ) : null}
-
-        <div className="mt-5 flex flex-wrap items-center justify-between gap-2">
-          <div>
-            {deleteEnabled ? (
+            {form.status === "open" ? (
               <button
                 type="button"
-                onClick={onDelete}
+                onClick={onMarkClosed}
+                className="rounded-2xl border border-emerald-300 bg-emerald-50 px-3 py-1.5 text-xs font-semibold text-emerald-800 hover:bg-emerald-100"
                 disabled={busy}
-                className={`rounded-2xl border px-3 py-1.5 text-xs font-semibold ${
-                  deleteConfirm
-                    ? "border-red-400 bg-red-100 text-red-800 hover:bg-red-200"
-                    : "border-zinc-200 bg-white text-zinc-600 hover:bg-zinc-50"
-                }`}
               >
-                {deleteConfirm ? "Tap again to confirm delete" : "Delete"}
+                Mark closed
               </button>
             ) : null}
           </div>
-          <div className="flex flex-wrap items-center gap-2">
-            <button
-              type="button"
-              onClick={onCancel}
-              className="rounded-2xl border border-zinc-200 bg-white px-3 py-1.5 text-sm text-zinc-700 hover:bg-zinc-50"
-              disabled={busy}
-            >
-              Cancel
-            </button>
-            <button
-              type="button"
-              onClick={onSave}
-              disabled={busy}
-              className="rounded-2xl bg-emerald-800 px-4 py-1.5 text-sm font-semibold text-white hover:bg-emerald-900 disabled:opacity-60"
-            >
-              {busy ? "Saving…" : "Save"}
-            </button>
+
+          <TradeForm
+            form={form}
+            setForm={setForm}
+            activeTickers={activeTickers}
+            today={today}
+          />
+
+          {error ? (
+            <div className="mt-3 rounded-lg border border-red-200 bg-red-50 px-3 py-2 text-xs text-red-800">
+              {error}
+            </div>
+          ) : null}
+
+          <div className="mt-5 flex flex-wrap items-center justify-between gap-2">
+            <div>
+              {deleteEnabled ? (
+                <button
+                  type="button"
+                  onClick={onDelete}
+                  disabled={busy}
+                  className={`rounded-2xl border px-3 py-1.5 text-xs font-semibold ${
+                    deleteConfirm
+                      ? "border-red-400 bg-red-100 text-red-800 hover:bg-red-200"
+                      : "border-zinc-200 bg-white text-zinc-600 hover:bg-zinc-50"
+                  }`}
+                >
+                  {deleteConfirm ? "Tap again to confirm delete" : "Delete"}
+                </button>
+              ) : null}
+            </div>
+            <div className="flex flex-wrap items-center gap-2">
+              <button
+                type="button"
+                onClick={onCancel}
+                className="rounded-2xl border border-zinc-200 bg-white px-3 py-1.5 text-sm text-zinc-700 hover:bg-zinc-50"
+                disabled={busy}
+              >
+                Cancel
+              </button>
+              <button
+                type="button"
+                onClick={onSave}
+                disabled={busy}
+                className="rounded-2xl bg-emerald-800 px-4 py-1.5 text-sm font-semibold text-white hover:bg-emerald-900 disabled:opacity-60"
+              >
+                {busy ? "Saving…" : "Save"}
+              </button>
+            </div>
           </div>
         </div>
-      </div>
-    </div>
+      ) : null}
+    </Drawer>
   );
 }
