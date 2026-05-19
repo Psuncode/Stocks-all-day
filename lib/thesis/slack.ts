@@ -138,7 +138,8 @@ async function pickBlocks(
     const setupTag = setup ? `  ·  *${setup}*` : "";
     const sector = r.sector ? `  ·  ${r.sector}` : "";
 
-    const headerLine = `${tickerLink}  ${price}  ·  ${decisionTag(r.decision)}${setupTag}${sector}`;
+    const momentumTag = r.metrics.sustainedHighVol ? "  ·  🌀 3W momentum" : "";
+    const headerLine = `${tickerLink}  ${price}  ·  ${decisionTag(r.decision)}${setupTag}${momentumTag}${sector}`;
     const narrative = `> ${pick.narrative}`;
     const planLine = r.plan
       ? `\nEntry \`$${r.plan.entry}\` → Stop \`$${r.plan.stop}\` → Target \`$${r.plan.target}\`  ·  *R:R ${r.plan.rr}x*  ·  est ${r.plan.estHold}`

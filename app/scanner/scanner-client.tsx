@@ -91,6 +91,7 @@ export default function ScannerClient() {
   const [maxRows, setMaxRows] = useState(0);
   const [search, setSearch] = useState("");
   const [setupFilter, setSetupFilter] = useState<SetupTag | "ALL">("ALL");
+  const [momentumOnly, setMomentumOnly] = useState(false);
 
   const [data, setData] = useState<ScanResponse | null>(null);
   const [loading, setLoading] = useState(false);
@@ -121,9 +122,13 @@ export default function ScannerClient() {
           r.sector.toLowerCase().includes(q),
         )
       : results;
-    if (setupFilter === "ALL") return afterSearch;
-    return afterSearch.filter((r) => r.gateSummary.setup === setupFilter);
-  }, [data, search, setupFilter]);
+    const afterSetup =
+      setupFilter === "ALL"
+        ? afterSearch
+        : afterSearch.filter((r) => r.gateSummary.setup === setupFilter);
+    if (!momentumOnly) return afterSetup;
+    return afterSetup.filter((r) => r.metrics.sustainedHighVol);
+  }, [data, search, setupFilter, momentumOnly]);
 
   const summary = useMemo(() => {
     const results = filteredResults;
@@ -137,6 +142,22 @@ export default function ScannerClient() {
     }
     return { trade, watch, pass, total: results.length };
   }, [filteredResults]);
+
+  // Count of 3W-momentum candidates in the current search window (before the
+  // setup filter and the momentum toggle itself are applied).
+  const momentumCount = useMemo(() => {
+    const results = data?.results ?? [];
+    const q = search.trim().toLowerCase();
+    const afterSearch = q
+      ? results.filter(
+          (r) =>
+            r.ticker.toLowerCase().includes(q) ||
+            r.name.toLowerCase().includes(q) ||
+            r.sector.toLowerCase().includes(q),
+        )
+      : results;
+    return afterSearch.filter((r) => r.metrics.sustainedHighVol).length;
+  }, [data, search]);
 
   // Setup counts computed BEFORE the setupFilter so chips show what's
   // available regardless of which chip is currently active.
@@ -356,8 +377,8 @@ export default function ScannerClient() {
           </div>
         </div>
 
-        {/* Setup filter chips */}
-        <div className="flex flex-wrap gap-2 border-b border-zinc-100 px-4 py-3">
+        {/* Setup filter chips + 3W momentum toggle */}
+        <div className="flex flex-wrap items-center gap-2 border-b border-zinc-100 px-4 py-3">
           {SETUP_CHIPS.map((chip) => {
             const count = setupCounts[chip] ?? 0;
             const active = setupFilter === chip;
@@ -392,6 +413,34 @@ export default function ScannerClient() {
               </button>
             );
           })}
+          <div className="ml-2 h-5 w-px bg-zinc-200" aria-hidden="true" />
+          <button
+            onClick={() => setMomentumOnly((v) => !v)}
+            disabled={momentumCount === 0 && !momentumOnly}
+            className={clsx(
+              "inline-flex items-center gap-1.5 rounded-full py-2 px-3 text-xs font-semibold transition-colors",
+              momentumOnly
+                ? "bg-orange-600 text-white"
+                : momentumCount === 0
+                  ? "border border-zinc-200 bg-white text-zinc-400 cursor-not-allowed"
+                  : "border border-orange-300 bg-orange-50 text-orange-900 hover:bg-orange-100",
+            )}
+            title="High vol + price tracking 15-day SMA, not a one-day spike"
+          >
+            <span>🌀 3W momentum</span>
+            <span
+              className={clsx(
+                "tabular-nums",
+                momentumOnly
+                  ? "text-orange-200"
+                  : momentumCount === 0
+                    ? "text-zinc-300"
+                    : "text-orange-500",
+              )}
+            >
+              {momentumCount}
+            </span>
+          </button>
         </div>
 
         {error && (

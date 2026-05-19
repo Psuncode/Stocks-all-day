@@ -57,11 +57,19 @@ export type DerivedMetrics = {
   sma20: number;
   sma50: number;
   sma200: number;
+  sma15: number;
   atr14: number;
   atrPct: number;
+  atr15Pct: number;
+  slope15PctPerDay: number;
+  priceToSma15Pct: number;
+  todayMoveAtrMult: number;
   rs60: number; // relative strength slope proxy
   spyTrendUp: boolean;
   spyChop: boolean;
+  // 3W momentum (v1.4): high vol but tracking the 15-day average, not a
+  // one-day spike. See lib/engine/evaluate.ts deriveMetrics for thresholds.
+  sustainedHighVol: boolean;
 };
 
 export type SetupTag = "PULLBACK" | "BASE_BREAKOUT" | "SQUEEZE" | "OVERSOLD_BOUNCE" | "NONE";
@@ -79,7 +87,18 @@ export type DecisionResult = {
     event: "OK" | "RISK" | "NONE";
     setup: SetupTag;
   };
-  metrics: Pick<DerivedMetrics, "price" | "spreadPct" | "advUsd" | "atrPct" | "rs60">;
+  metrics: Pick<
+    DerivedMetrics,
+    | "price"
+    | "spreadPct"
+    | "advUsd"
+    | "atrPct"
+    | "rs60"
+    | "atr15Pct"
+    | "slope15PctPerDay"
+    | "priceToSma15Pct"
+    | "sustainedHighVol"
+  >;
   plan?: {
     entry: number;
     stop: number;

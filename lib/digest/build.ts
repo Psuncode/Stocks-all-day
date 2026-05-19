@@ -60,9 +60,15 @@ export async function buildDigest(): Promise<DigestPick[]> {
   );
 
   candidates.sort((a, b) => {
+    // Decision tier first: TRADE before WATCH.
     if (a.decision !== b.decision) {
       return a.decision === "TRADE" ? -1 : 1;
     }
+    // Within a tier, bias toward 3W momentum (high vol + tracking SMA15).
+    if (a.metrics.sustainedHighVol !== b.metrics.sustainedHighVol) {
+      return a.metrics.sustainedHighVol ? -1 : 1;
+    }
+    // Then R:R, then ADV$ — both descending.
     const aRr = a.plan?.rr ?? 0;
     const bRr = b.plan?.rr ?? 0;
     if (aRr !== bRr) return bRr - aRr;

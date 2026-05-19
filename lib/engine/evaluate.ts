@@ -69,6 +69,17 @@ export function deriveMetrics(symbol: UniverseSymbol, spy: Candle[]): DerivedMet
   const sma20 = sma(closes, 20);
   const sma50 = sma(closes, 50);
   const sma200 = sma(closes, 200);
+  const sma15 = sma(closes, 15);
+
+  // 3W (15-session) momentum metrics — see "sustainedHighVol" below.
+  const atr15 = atr(candles, 15);
+  const atr15Pct = pct(atr15, price);
+  const closes15 = closes.slice(-15);
+  const slope15Raw = slope(closes15); // raw price change per day
+  const slope15PctPerDay = sma15 > 0 ? (slope15Raw / sma15) * 100 : 0;
+  const priceToSma15Pct = pct(price - sma15, sma15);
+  const prevClose = closes[closes.length - 2] ?? price;
+  const todayMoveAtrMult = atr14 > 0 ? Math.abs(price - prevClose) / atr14 : 0;
 
   const spyCloses = spy.map((c) => c.c);
   const spySma20 = sma(spyCloses, 20);
@@ -86,6 +97,15 @@ export function deriveMetrics(symbol: UniverseSymbol, spy: Candle[]): DerivedMet
   const ratios = sym60.map((c, i) => c / (spy60[i] || spy60[spy60.length - 1]!));
   const rs60 = slope(ratios) * 10_000; // scaled for readability
 
+  // v1.4 — "3W momentum": volatile names tracking their 15-day average.
+  // Surfaces stocks that have been consistently moving (in either direction)
+  // for ~3 weeks, while filtering out one-day-spike chasers.
+  const sustainedHighVol =
+    atr15Pct >= 3 &&
+    Math.abs(priceToSma15Pct) <= 3 &&
+    Math.abs(slope15PctPerDay) >= 0.3 &&
+    todayMoveAtrMult <= 1.5;
+
   return {
     price,
     spreadPct,
@@ -93,11 +113,17 @@ export function deriveMetrics(symbol: UniverseSymbol, spy: Candle[]): DerivedMet
     sma20,
     sma50,
     sma200,
+    sma15,
     atr14,
     atrPct,
+    atr15Pct,
+    slope15PctPerDay,
+    priceToSma15Pct,
+    todayMoveAtrMult,
     rs60,
     spyTrendUp,
     spyChop,
+    sustainedHighVol,
   };
 }
 
@@ -176,6 +202,10 @@ export function evaluateSymbol(
         advUsd: m.advUsd,
         atrPct: m.atrPct,
         rs60: m.rs60,
+        atr15Pct: m.atr15Pct,
+        slope15PctPerDay: m.slope15PctPerDay,
+        priceToSma15Pct: m.priceToSma15Pct,
+        sustainedHighVol: m.sustainedHighVol,
       },
       gates,
       updatedAt: new Date().toISOString(),
@@ -607,6 +637,10 @@ export function evaluateSymbol(
       advUsd: m.advUsd,
       atrPct: m.atrPct,
       rs60: m.rs60,
+        atr15Pct: m.atr15Pct,
+        slope15PctPerDay: m.slope15PctPerDay,
+        priceToSma15Pct: m.priceToSma15Pct,
+        sustainedHighVol: m.sustainedHighVol,
     },
     plan,
     gates,
@@ -643,6 +677,10 @@ function finalize(
       advUsd: m.advUsd,
       atrPct: m.atrPct,
       rs60: m.rs60,
+        atr15Pct: m.atr15Pct,
+        slope15PctPerDay: m.slope15PctPerDay,
+        priceToSma15Pct: m.priceToSma15Pct,
+        sustainedHighVol: m.sustainedHighVol,
     },
     gates,
     updatedAt: new Date().toISOString(),
