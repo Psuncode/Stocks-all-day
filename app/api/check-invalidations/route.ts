@@ -1,10 +1,15 @@
 import { loadWatchlist, type LoadError } from "@/lib/thesis/load";
 import { evaluateRule } from "@/lib/thesis/evaluate-rules";
 import { getProvider } from "@/lib/data/provider";
-import { sendSlackDigest, type FireRecord } from "@/lib/thesis/slack";
+import {
+  sendSlackDigest,
+  type FireRecord,
+  type JournalDigest,
+} from "@/lib/thesis/slack";
 import { buildDigest, type DigestPick } from "@/lib/digest/build";
 import { persistDigest } from "@/lib/digest/archive";
 import { todayYmd } from "@/lib/engine/evaluate";
+import { loadWeeklyStats } from "@/lib/journal/archive";
 
 export const runtime = "nodejs";
 export const dynamic = "force-dynamic";
@@ -134,9 +139,27 @@ export async function POST(req: Request): Promise<Response> {
     }
   }
 
-  // Single combined POST: fires (if any) + digest (if any). Skipped when both
-  // are empty or when SLACK_WEBHOOK_URL is unset. Errors swallowed inside.
-  await sendSlackDigest(fires, picks);
+  // v4.0 T4: on Fridays, also include a journal "Week in trades" section.
+  // Cron fires at 21:05 UTC, which is mid-evening Friday in ET — UTC day 5.
+  // Failure-soft: any stats error is logged and skipped; the digest still ships.
+  let journal: JournalDigest | undefined;
+  const isFriday = new Date().getUTCDay() === 5;
+  if (isFriday) {
+    try {
+      const weeklyStats = await loadWeeklyStats(7);
+      journal = { date: todayYmd(), weeklyStats };
+    } catch (e) {
+      console.error(
+        `[check-invalidations] journal stats failed: ${(e as Error).message}`,
+      );
+      // Don't block delivery.
+    }
+  }
+
+  // Single combined POST: fires (if any) + digest (if any) + journal (Fri only).
+  // Skipped when all are empty or when SLACK_WEBHOOK_URL is unset. Errors
+  // swallowed inside.
+  await sendSlackDigest(fires, picks, journal);
 
   const body: CheckResponse = {
     checked: active.length,

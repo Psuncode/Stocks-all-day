@@ -17,6 +17,12 @@
 
 import type { DigestPick } from "@/lib/digest/build";
 import { isHealthcareSector, isUtahTicker } from "@/lib/preferences";
+import type { DerivedStats } from "@/lib/journal/schema";
+
+export type JournalDigest = {
+  date: string; // YYYY-MM-DD (today)
+  weeklyStats: DerivedStats; // from loadWeeklyStats(7)
+};
 
 export type FireRecord = {
   ticker: string;
@@ -337,14 +343,134 @@ async function chartShortUrl(
 }
 
 // ---------------------------------------------------------------------------
+// Journal blocks (Feature v4.0 T4 — Friday "Week in trades" section)
+// ---------------------------------------------------------------------------
+
+const usdFormatter = new Intl.NumberFormat("en-US", {
+  style: "currency",
+  currency: "USD",
+  maximumFractionDigits: 0,
+  signDisplay: "always",
+});
+
+function formatPct(value: number): string {
+  return `${Math.round(value * 100)}%`;
+}
+
+function formatR(value: number): string {
+  const sign = value >= 0 ? "+" : "";
+  return `${sign}${value.toFixed(1)}R`;
+}
+
+function formatUsd(value: number): string {
+  // Intl puts the sign before the currency symbol: e.g. "+$420" or "-$120".
+  // Reorder so the sign sits between the symbol and the digits: "$+420".
+  const raw = usdFormatter.format(value);
+  const match = raw.match(/^([+-])(\$)(.+)$/);
+  if (match) return `${match[2]}${match[1]}${match[3]}`;
+  return raw;
+}
+
+function setupBreakdownLabel(setup: string): string {
+  if (setup === "UNSET") return "UNSET";
+  return setup;
+}
+
+function journalBlocks(
+  journal: JournalDigest,
+  appUrl: string,
+): SlackBlock[] {
+  const { weeklyStats, date } = journal;
+  const blocks: SlackBlock[] = [
+    {
+      type: "header",
+      text: {
+        type: "plain_text",
+        text: "📓 Week in trades",
+        emoji: true,
+      },
+    },
+    {
+      type: "context",
+      elements: [
+        {
+          type: "mrkdwn",
+          text: `${date} · ${weeklyStats.closedN} closed this week`,
+        },
+      ],
+    },
+  ];
+
+  if (weeklyStats.closedN === 0) {
+    blocks.push({
+      type: "section",
+      text: {
+        type: "mrkdwn",
+        text: "No trades closed this week.",
+      },
+    });
+    blocks.push({
+      type: "section",
+      text: {
+        type: "mrkdwn",
+        text: `<${appUrl}/journal|Open journal →>`,
+      },
+    });
+    return blocks;
+  }
+
+  // Top-line stats bullets.
+  const lines: string[] = [
+    `• Win rate: *${formatPct(weeklyStats.winRate)}*`,
+    `• Avg R: *${formatR(weeklyStats.avgR)}*`,
+    `• Total P&L: *${formatUsd(weeklyStats.totalPnL)}*`,
+    `• Expectancy: *${formatR(weeklyStats.expectancy)}*`,
+  ];
+
+  blocks.push({
+    type: "section",
+    text: { type: "mrkdwn", text: lines.join("\n") },
+  });
+
+  // By-setup breakdown — only setups with n >= 1 closed.
+  const setupEntries = Object.entries(weeklyStats.bySetup)
+    .filter(([, stats]) => stats.n >= 1)
+    // Stats.n includes open trades; for the Slack digest we already scoped
+    // weeklyStats to closed-this-week, so n here is closed count.
+    .sort((a, b) => b[1].n - a[1].n);
+
+  if (setupEntries.length > 0) {
+    const setupLines = setupEntries.map(([setup, stats]) => {
+      const label = setupBreakdownLabel(setup);
+      return `• *${label}* · ${stats.n} closed · ${formatPct(stats.winRate)} win · ${formatR(stats.avgR)}`;
+    });
+    blocks.push({
+      type: "section",
+      text: { type: "mrkdwn", text: setupLines.join("\n") },
+    });
+  }
+
+  blocks.push({
+    type: "section",
+    text: {
+      type: "mrkdwn",
+      text: `<${appUrl}/journal|Open journal →>`,
+    },
+  });
+
+  return blocks;
+}
+
+// ---------------------------------------------------------------------------
 // Public sender
 // ---------------------------------------------------------------------------
 
 export async function sendSlackDigest(
   fires: FireRecord[],
   picks: DigestPick[] = [],
+  journal?: JournalDigest,
 ): Promise<void> {
-  if (fires.length === 0 && picks.length === 0) return;
+  if (fires.length === 0 && picks.length === 0 && !journal) return;
 
   const webhook = process.env.SLACK_WEBHOOK_URL;
   if (!webhook || webhook.length === 0) {
@@ -367,6 +493,16 @@ export async function sendSlackDigest(
   // Build digest blocks in parallel (chart shortlinks fan out to quickchart).
   const digestBlocks = await pickBlocks(picks, appUrl);
   blocks.push(...digestBlocks);
+
+  // v4.0 T4: Friday journal section appears below the digest picks. Caller
+  // decides whether to pass `journal` (Friday-only). We render even when
+  // closedN === 0 so the surface stays visible.
+  if (journal) {
+    if (blocks.length > 0) {
+      blocks.push({ type: "divider" });
+    }
+    blocks.push(...journalBlocks(journal, appUrl));
+  }
 
   // GSD review M7: Slack rejects >50 blocks. Log when we truncate so
   // future-us can see when the digest started losing content silently.
