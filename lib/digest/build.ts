@@ -13,12 +13,16 @@ import { getProvider } from "@/lib/data/provider";
 import { runScan } from "@/lib/engine/scan";
 import { fetchSpyCandles } from "@/lib/data/yahoo";
 import type { DecisionResult, ScanConfig } from "@/lib/types";
+import { buildNarrative } from "@/lib/digest/narrative";
 
 export type DigestPick = {
   result: DecisionResult;
   // Last ~90 daily closes for the chart. Plain `{t,c}` pairs to keep the
   // payload small when this object crosses module boundaries.
   candles: Array<{ t: string; c: number }>;
+  // Pre-built per-pick narrative (Slack digest description). Computed at
+  // build time when we still have the full candle (with volume + OHL).
+  narrative: string;
 };
 
 const TOP_N = 5;
@@ -72,10 +76,9 @@ export async function buildDigest(): Promise<DigestPick[]> {
   const universeByTicker = new Map(universe.map((u) => [u.meta.ticker, u]));
   return top.map((result) => {
     const sym = universeByTicker.get(result.ticker);
-    const candles = (sym?.candles ?? []).slice(-90).map((c) => ({
-      t: c.t,
-      c: c.c,
-    }));
-    return { result, candles };
+    const fullCandles = sym?.candles ?? [];
+    const candles = fullCandles.slice(-90).map((c) => ({ t: c.t, c: c.c }));
+    const narrative = buildNarrative(result, fullCandles);
+    return { result, candles, narrative };
   });
 }

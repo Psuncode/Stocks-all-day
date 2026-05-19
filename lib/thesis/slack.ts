@@ -139,10 +139,10 @@ async function pickBlocks(
     const sector = r.sector ? `  ·  ${r.sector}` : "";
 
     const headerLine = `${tickerLink}  ${price}  ·  ${decisionTag(r.decision)}${setupTag}${sector}`;
-    const reasonLine = `> ${r.reason}`;
+    const narrative = `> ${pick.narrative}`;
     const planLine = r.plan
       ? `\nEntry \`$${r.plan.entry}\` → Stop \`$${r.plan.stop}\` → Target \`$${r.plan.target}\`  ·  *R:R ${r.plan.rr}x*  ·  est ${r.plan.estHold}`
-      : `\n_No actionable plan — watching for setup confirmation._`;
+      : "";
 
     const gates =
       `\n_Trend ${r.gateSummary.trend.toLowerCase()} · ` +
@@ -153,7 +153,7 @@ async function pickBlocks(
       type: "section",
       text: {
         type: "mrkdwn",
-        text: headerLine + "\n" + reasonLine + planLine + gates,
+        text: headerLine + "\n" + narrative + planLine + gates,
       },
     });
 
