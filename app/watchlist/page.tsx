@@ -1,10 +1,12 @@
 import { loadWatchlist } from "@/lib/thesis/load";
 import { evaluateRule } from "@/lib/thesis/evaluate-rules";
 import { horizonState } from "@/lib/thesis/horizon";
-import { getProvider } from "@/lib/data/provider";
+import { getCachedSymbol } from "@/lib/data/cached-provider";
 import WatchlistView from "@/app/watchlist/watchlist-client";
 import type { EnrichedEntry, FireRecord } from "@/app/watchlist/_thesis-card";
 
+// Page itself is dynamic (per-request), but per-symbol data is cached at
+// the call site via getCachedSymbol (15-min TTL).
 export const dynamic = "force-dynamic";
 
 const MS_PER_DAY = 24 * 60 * 60 * 1000;
@@ -41,14 +43,13 @@ function daysFromToday(iso: string, today: Date): number {
 
 export default async function WatchlistPage() {
   const { watchlist, errors } = await loadWatchlist();
-  const provider = getProvider();
   const today = new Date();
 
   const enriched: EnrichedEntry[] = await Promise.all(
     watchlist.tickers.map(async (entry) => {
       let symbol = null;
       try {
-        symbol = await provider.getSymbol(entry.ticker);
+        symbol = await getCachedSymbol(entry.ticker);
       } catch {
         symbol = null;
       }

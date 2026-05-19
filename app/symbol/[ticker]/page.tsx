@@ -3,9 +3,12 @@ import { Badge } from "@/components/Badge";
 import { GateBreakdown } from "@/components/GateBreakdown";
 import { PriceChart } from "@/components/PriceChart";
 import { GeminiExplain } from "@/app/symbol/[ticker]/gemini-explain";
-import { getProvider } from "@/lib/data/provider";
+import {
+  getCachedSymbol,
+  getCachedUniverse,
+  getCachedSpy,
+} from "@/lib/data/cached-provider";
 import { evaluateSymbol, todayYmd } from "@/lib/engine/evaluate";
-import { fetchSpyCandles } from "@/lib/data/yahoo";
 import { loadWatchlist } from "@/lib/thesis/load";
 import { horizonState } from "@/lib/thesis/horizon";
 import type { HorizonState } from "@/lib/thesis/horizon";
@@ -109,11 +112,10 @@ export default async function SymbolPage({
   const sp = await searchParams;
   const allowEarnings = sp.allowEarnings === "1" || sp.allowEarnings === "true";
 
-  const provider = getProvider();
   const [universe, spy, symbol, watchlistResult] = await Promise.all([
-    provider.getUniverse(),
-    fetchSpyCandles(),
-    provider.getSymbol(ticker),
+    getCachedUniverse(),
+    getCachedSpy(),
+    getCachedSymbol(ticker),
     loadWatchlist(),
   ]);
 
