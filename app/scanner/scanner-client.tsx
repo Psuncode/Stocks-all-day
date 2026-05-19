@@ -752,8 +752,8 @@ export default function ScannerClient({ closesByTicker = {} }: ScannerClientProp
                     <div className="flex items-center gap-2">
                       <Sparkline
                         closes={closesByTicker[r.ticker.toUpperCase()] ?? []}
-                        width={56}
-                        height={20}
+                        width={72}
+                        height={24}
                       />
                       <Badge tone={decisionTone(r.decision)}>{r.decision}</Badge>
                     </div>
@@ -886,8 +886,8 @@ export default function ScannerClient({ closesByTicker = {} }: ScannerClientProp
                           </Link>
                           <Sparkline
                             closes={closesByTicker[r.ticker.toUpperCase()] ?? []}
-                            width={50}
-                            height={18}
+                            width={72}
+                            height={24}
                           />
                           <span className="truncate text-xs text-zinc-500">{r.sector}</span>
                         </div>
