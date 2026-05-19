@@ -98,6 +98,13 @@ export type NewTradeInput = z.infer<typeof NewTradeInput>;
 /**
  * Shape for updates — every base field optional (server enforces the
  * closed-trade invariants on the merged result inside updateTrade()).
+ *
+ * H3 (GSD review): a `.partial()` schema cannot forbid `exit_date` or
+ * `exit_price` when status flips from "closed" to "open" — partial fields
+ * are all optional and a missing field on the patch is indistinguishable
+ * from "leave the prior value alone". The closed → open invariant is
+ * therefore enforced at the archive layer (`updateTrade`), which strips
+ * stale exit fields before re-parsing through `TradeRecord`.
  */
 export const UpdateTradeInput = TradeBaseObject.partial();
 export type UpdateTradeInput = z.infer<typeof UpdateTradeInput>;
@@ -125,7 +132,17 @@ export type DerivedStats = {
   avgR: number; // among closedWithRn
   /** $ P&L summed across all closed trades. */
   totalPnL: number;
-  /** Sum of all winning $ P&L minus sum of all losing $ P&L. */
+  /**
+   * H2a (GSD review): per-trade R-expectancy in **R-multiples** (unitless),
+   * NOT a dollar quantity. Computed as
+   *   winRate * avgWinR + lossProb * avgLossR
+   * across closed trades that have a non-null R (`closedWithRn`).
+   * Push trades (r === 0) are excluded from both win and loss buckets — see
+   * H2b in archive.ts `computeStats`. Field name kept (not renamed to
+   * `expectancyR`) to avoid touching callers outside `lib/journal/`; the
+   * Friday Slack digest already formats this through `formatR()`, so the
+   * R-multiple semantics are consistent across the read path.
+   */
   expectancy: number;
   /** Per-setup breakdown — only setups with at least one closed trade. */
   bySetup: Record<string, SetupStats>;

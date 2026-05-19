@@ -121,12 +121,22 @@ export async function updateTrade(
     };
   }
 
-  const merged = TradeRecord.safeParse({
+  // H3 (GSD review): UpdateTradeInput.partial() can't forbid exit fields on
+  // an "open" merged record at schema time (every field is optional). Strip
+  // stale exit_date / exit_price here on the closed → open transition so the
+  // /journal table never renders OPEN with carry-over exit values, and so
+  // computeStats correctly skips this trade for R-multiple math.
+  const mergedRaw: Record<string, unknown> = {
     ...current,
     ...parsedPatch.data,
     id,
     updated_at: nowIso(),
-  });
+  };
+  if (mergedRaw.status === "open") {
+    mergedRaw.exit_date = undefined;
+    mergedRaw.exit_price = undefined;
+  }
+  const merged = TradeRecord.safeParse(mergedRaw);
   if (!merged.success) {
     return {
       ok: false,
@@ -223,9 +233,15 @@ export async function computeStats(
     .map((t) => ({ t, r: computeRForTrade(t, thesisInvalidationByTicker) }))
     .filter((x): x is { t: TradeRecord; r: number } => x.r !== null);
 
+  // H2b (GSD review): pushes (r === 0) are excluded from BOTH win and loss
+  // buckets. They still count toward `closedWithRn` so totals are honest, but
+  // `winRate` is computed over decisive trades only (wins + losses), and the
+  // expectancy formula's `lossProb` is the symmetric complement.
   const closedWithRn = closedWithR.length;
   const wins = closedWithR.filter((x) => x.r > 0).length;
-  const winRate = closedWithRn === 0 ? 0 : wins / closedWithRn;
+  const losses = closedWithR.filter((x) => x.r < 0).length;
+  const decisive = wins + losses;
+  const winRate = decisive === 0 ? 0 : wins / decisive;
   const avgR =
     closedWithRn === 0
       ? 0
@@ -235,16 +251,18 @@ export async function computeStats(
   // be computed — risk-less recap of money).
   const totalPnL = closed.reduce((s, t) => s + (dollarPnL(t) ?? 0), 0);
 
-  // Expectancy: among R-eligible closed trades, average win × prob(win) − average loss × prob(loss).
+  // Expectancy (H2b): among R-eligible *decisive* closed trades, the standard
+  // per-trade R-expectancy. Pushes contribute 0 to both halves and are
+  // dropped from the probability denominator.
   const rWins = closedWithR.filter((x) => x.r > 0).map((x) => x.r);
-  const rLosses = closedWithR.filter((x) => x.r <= 0).map((x) => x.r);
+  const rLosses = closedWithR.filter((x) => x.r < 0).map((x) => x.r);
   const avgWin =
     rWins.length === 0 ? 0 : rWins.reduce((s, r) => s + r, 0) / rWins.length;
   const avgLoss =
     rLosses.length === 0
       ? 0
       : rLosses.reduce((s, r) => s + r, 0) / rLosses.length;
-  const lossProb = closedWithRn === 0 ? 0 : rLosses.length / closedWithRn;
+  const lossProb = decisive === 0 ? 0 : losses / decisive;
   const expectancy = winRate * avgWin + lossProb * avgLoss;
 
   // Per-setup breakdown across all trades (open + closed). Empty for trades
@@ -257,6 +275,10 @@ export async function computeStats(
     bySetup[key] = cur;
   }
   // Compute per-setup winRate + avgR from closedWithR scoped to that setup.
+  // H2b (GSD review): winRate denominator is decisive trades only (pushes
+  // excluded), mirroring the top-level computation above. avgR still
+  // averages over all R-eligible trades — a push of 0 contributes 0, which
+  // is its correct R-contribution.
   for (const key of Object.keys(bySetup)) {
     const setupClosed = closedWithR.filter(
       (x) => (x.t.setup_at_entry ?? "UNSET") === key,
@@ -266,8 +288,11 @@ export async function computeStats(
       bySetup[key]!.avgR = 0;
       continue;
     }
+    const setupWins = setupClosed.filter((x) => x.r > 0).length;
+    const setupLosses = setupClosed.filter((x) => x.r < 0).length;
+    const setupDecisive = setupWins + setupLosses;
     bySetup[key]!.winRate =
-      setupClosed.filter((x) => x.r > 0).length / setupClosed.length;
+      setupDecisive === 0 ? 0 : setupWins / setupDecisive;
     bySetup[key]!.avgR =
       setupClosed.reduce((s, x) => s + x.r, 0) / setupClosed.length;
   }
@@ -299,10 +324,15 @@ export async function loadJournal(): Promise<{
  *  the Friday Slack digest. */
 export async function loadWeeklyStats(days = 7): Promise<DerivedStats> {
   const trades = await listTrades();
+  // H1 (GSD review): `(today - days).slice(0,10)` is a calendar date string,
+  // and a `>=` filter would include that boundary date — yielding N+1 distinct
+  // calendar dates for `days=7` (today plus seven prior). Using `>` produces
+  // exactly N calendar dates beyond the cutoff, matching the "last 7 days"
+  // promise of the Friday Slack "Week in trades" section.
   const cutoffMs = Date.now() - days * 24 * 60 * 60 * 1000;
   const cutoffDate = new Date(cutoffMs).toISOString().slice(0, 10);
   const recent = trades.filter(
-    (t) => t.status === "closed" && (t.exit_date ?? "") >= cutoffDate,
+    (t) => t.status === "closed" && (t.exit_date ?? "") > cutoffDate,
   );
   return computeStats(recent);
 }
